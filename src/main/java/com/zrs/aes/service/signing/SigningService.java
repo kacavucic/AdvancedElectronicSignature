@@ -37,15 +37,6 @@ public class SigningService {
         this.KEYSTORE_PASSWORD = signingProperties.getKeystorePassword().toCharArray();
     }
 
-//    private final String keystorePassword;
-//
-//    @Autowired
-//    public SigningService(SigningProperties signingProperties) {
-//        this.keystorePassword = signingProperties.getKeystorePassword();
-//    }
-//
-//    final char[] KEYSTORE_PASSWORD = keystorePassword.toCharArray();
-
     public Path sign(Path fileToBeSignedPath, String reason, String location)
             throws GeneralSecurityException, IOException {
 

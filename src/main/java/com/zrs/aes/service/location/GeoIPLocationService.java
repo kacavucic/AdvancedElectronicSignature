@@ -11,8 +11,7 @@ import java.net.InetAddress;
 
 @Service
 public class GeoIPLocationService {
-    private DatabaseReader dbReaderCountry;
-    private DatabaseReader dbReaderCity;
+    private final DatabaseReader dbReaderCity;
 
     public GeoIPLocationService() throws IOException {
         File databaseCity = new File("C:\\Users\\ACER\\Desktop\\AdvancedElectronicSignature\\GeoLite2City\\GeoLite2-City.mmdb");

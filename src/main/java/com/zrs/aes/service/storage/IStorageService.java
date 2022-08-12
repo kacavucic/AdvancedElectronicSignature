@@ -7,9 +7,9 @@ import java.nio.file.Path;
 
 public interface IStorageService {
 
-    public Path store(MultipartFile file);
+    Path store(MultipartFile file);
 
-    public Resource loadAsResource(String fileName);
+    Resource loadAsResource(String fileName);
 
-    public Path load(String filename);
+    Path load(String filename);
 }
