@@ -17,8 +17,6 @@ import javax.mail.internet.MimeMessage;
 public class EmailServiceImpl implements IEmailService {
 
 
-
-
     private static final String NOREPLY_ADDRESS = "kacafon98@gmail.com";
 
     private final JavaMailSender emailSender;

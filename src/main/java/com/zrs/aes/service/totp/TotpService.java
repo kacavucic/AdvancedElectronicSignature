@@ -28,7 +28,6 @@ public class TotpService {
      * Creates OTP code for provided secret using current timestamp and predefined time bucket
      *
      * @param secret Secret used for OTP generation
-     *
      * @return Created OTP code with corrresponding details
      */
     public OTP getCodeObject(String secret) {
@@ -51,8 +50,7 @@ public class TotpService {
      * Verifies provided code based on the provided secret
      *
      * @param secret Secret used for OTP code verification
-     * @param code OTP code to be verified
-     *
+     * @param code   OTP code to be verified
      * @return Whether provided code is valid or not
      */
     public boolean verifyCode(String secret, String code) {
