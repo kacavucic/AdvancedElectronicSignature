@@ -105,6 +105,11 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         Path signedFilePath = signingService.sign(fileToBeSignedPath, reason, location);
         File signedFile = signedFilePath.toFile();
 
+        signingSession.setSigned(true);
+        signingSession.setSignedFilePath(signedFilePath.toAbsolutePath().toString());
+        signingSession.setSignedFileName(signedFilePath.getFileName().toString());
+        save(signingSession);
+
         return principal.getClaimAsString("given_name")
                 + ", document "
                 + fileToBeSignedPath.getFileName().toString()

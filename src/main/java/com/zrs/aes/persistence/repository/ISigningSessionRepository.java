@@ -6,5 +6,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ISigningSessionRepository extends JpaRepository<SigningSession, String> {
-    SigningSession findByFilePath(String filepath);
+    SigningSession findByFilePath(String filePath);
+    SigningSession findBySignedFilePath(String signedFilePath);
 }

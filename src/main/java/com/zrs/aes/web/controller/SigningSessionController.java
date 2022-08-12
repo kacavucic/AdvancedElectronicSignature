@@ -4,13 +4,17 @@ package com.zrs.aes.web.controller;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.service.signingSession.ISigningSessionService;
+import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.service.totp.TotpService;
 import com.zrs.aes.web.dto.request.SignRequest;
+import com.zrs.aes.web.dto.response.DownloadDocumentResponse;
 import com.zrs.aes.web.dto.response.InitiateSigningSessionResponse;
 import com.zrs.aes.web.dto.response.SignResponse;
 import com.zrs.aes.web.mapper.Mapper;
 import com.zrs.aes.web.validation.FileConstraint;
 import lombok.AllArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +40,7 @@ public class SigningSessionController {
     private TotpService totpService;
     private ISigningSessionService signingSessionService;
     private Mapper mapper;
+    private IStorageService storageService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<InitiateSigningSessionResponse> initiateSigningSession(@RequestParam("document") @FileConstraint MultipartFile file,
@@ -47,8 +52,8 @@ public class SigningSessionController {
 
     @PostMapping(value = "{signingSessionId}/sign")
     public ResponseEntity<SignResponse> sign(@PathVariable String signingSessionId, @RequestBody SignRequest signRequest,
-                                      @AuthenticationPrincipal Jwt principal,
-                                      HttpServletRequest httpServletRequest)
+                                             @AuthenticationPrincipal Jwt principal,
+                                             HttpServletRequest httpServletRequest)
             throws IOException, GeoIp2Exception, GeneralSecurityException {
 
 
@@ -71,28 +76,27 @@ public class SigningSessionController {
 
     }
 
-//    @GetMapping("/downloadFile/{fileName:.+}")
-//    public ResponseEntity<Resource> downloadFile(@PathVariable String fileName, HttpServletRequest request) {
-//        // Load file as Resource
-//        Resource resource = storageService.loadFileAsResource(fileName);
-//
-//        // Try to determine file's content type
-//        String contentType = null;
-//        try {
-//            contentType = request.getServletContext().getMimeType(resource.getFile().getAbsolutePath());
-//        } catch (IOException ex) {
-//            logger.info("Could not determine file type.");
-//        }
-//
-//        // Fallback to the default content type if type could not be determined
-//        if (contentType == null) {
-//            contentType = "application/octet-stream";
-//        }
-//
-//        return ResponseEntity.ok()
-//                .contentType(MediaType.parseMediaType(contentType))
-//                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
-//                .body(resource);
-//    }
+    @GetMapping(value = "{signingSessionId}/document")
+    public ResponseEntity<?> downloadDocument(@PathVariable String signingSessionId) {
+        Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
+        if (signingSessionOptional.isPresent()) {
+            if (signingSessionOptional.get().isSigned()) {
+                Resource signedDocument = storageService.loadAsResource(signingSessionOptional.get().getSignedFileName());
+                return ResponseEntity.ok()
+                        .contentType(MediaType.APPLICATION_PDF)
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + signedDocument.getFilename() + "\"")
+                        .body(signedDocument);
+            } else {
+                return ResponseEntity.badRequest()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(new DownloadDocumentResponse("Document not signed"));
+            }
+        } else {
+            return ResponseEntity.badRequest()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(new DownloadDocumentResponse("Signing session not found"));
+        }
+
+    }
 
 }

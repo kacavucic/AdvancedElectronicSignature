@@ -32,6 +32,15 @@ public class SigningSession {
     @Column
     private String fileName;
 
+    @Column
+    private boolean signed;
+
+    @Column
+    private String signedFilePath;
+
+    @Column
+    private String signedFileName;
+
     public SigningSession(String id) {
         this.id = id;
     }
