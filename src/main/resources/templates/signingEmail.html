@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>Email</title>
+    <meta content="text/html" http-equiv="Content-Type"/>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+    <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+    <link crossorigin="anonymous" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.2/css/bootstrap.min.css"
+          integrity="sha384-PsH8R72JQ3SOdhVi3uxftmaW6Vc51MKb0q5P2rRUpPvrszuE4W1povHYgTpBfshb" rel="stylesheet">
+</head>
+<body style="min-height: 100vh;margin: 0 !important; padding: 0 !important;
+background-color: white">
+<div class="row" style="padding-top: 25px">
+    <div class="card col-xs-12 offset-xs-0 col-md-4 offset-md-4">
+        <div class="card-body">
+            <div>
+                <h1 class="card-title" style="padding-left: 10px;">Verify Document Signing</h1>
+                <img src="https://img.icons8.com/ios-filled/90/4a90e2/one-time-password.png"
+                     style="padding-left: 10px;"/>
+            </div>
+            <div>
+                <p style="color: #000000 !important; padding-left: 10px;"><b th:text="${user_first_name}"></b>, please
+                    use the
+                    following
+                    code to complete document signing process.</p>
+                <p style="color: #000000 !important; padding-left: 10px;">
+                    Your one-time code: <b th:text="${code}"></b>
+                </p>
+                <p style="color: #000000 !important; padding-left: 10px;"><i>Note</i>: This one-time code
+                    expires 30 seconds after it was requested.
+                </p>
+                <p style="color: #000000 !important; padding-left: 10px;">
+                    Best Regards,<br>
+                    Katarina Vučić
+                </p>
+            </div>
+        </div>
+
+    </div>
+</div>
+</body>
+</html>
+
+
+

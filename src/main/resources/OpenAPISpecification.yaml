@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info:
+  title: Advanced Electronic Signature
+  description: Advanced Electronic Signature API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8081/resource-server
+    description: Resource server
+#  - url: http://localhost:8083/auth
+#    description: Authorization server
+paths:
+  /resource-server/uploadFile:
+    post:
+      description: Uploads document for signing
+      responses:
+        '500':
+          description: Auto generated using Swagger Inspector
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        implicit:
+          authorizationUrl: http://localhost:8083/auth/realms/aes/protocol/openid-connect/auth
+          scopes:
+            scope_name: read
+  

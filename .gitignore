@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+**/src/main/resources/encryption/*
+**/src/main/resources/static/*
+**/src/main/resources/application-local.yml

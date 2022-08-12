@@ -1,0 +1,43 @@
+server:
+  port: 8081
+  servlet:
+#    context-path: /resource-server
+     context-path: /v1/aes
+file:
+  upload-dir: src/main/resources/static/uploadedDocuments
+  download-dir: src/main/resources/static/signedDocuments
+
+####### resource server configuration properties
+spring:
+  profiles:
+    active: local
+  jpa:
+    generate-ddl: true
+  datasource:
+    username: tbd
+    password: tbd
+    url: jdbc:mysql://localhost:3306/aes
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://localhost:8083/auth/realms/aes
+          jwk-set-uri: http://localhost:8083/auth/realms/aes/protocol/openid-connect/certs
+  mail:
+    host: smtp.gmail.com
+    username: tbd
+    password: tbd
+    port: 587
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  servlet:
+    multipart:
+      enabled: true
+      file-size-threshold: 2KB
+      max-file-size: 50MB
+      max-request-size: 65MB
