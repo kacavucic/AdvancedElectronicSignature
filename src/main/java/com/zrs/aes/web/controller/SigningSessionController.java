@@ -3,13 +3,14 @@ package com.zrs.aes.web.controller;
 
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
+import com.zrs.aes.request.SignRequest;
+import com.zrs.aes.response.InitiateSigningSessionResponse;
+import com.zrs.aes.response.SignResponse;
 import com.zrs.aes.service.signingSession.ISigningSessionService;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.service.totp.TotpService;
-import com.zrs.aes.web.dto.request.SignRequest;
-import com.zrs.aes.web.dto.response.DownloadDocumentResponse;
-import com.zrs.aes.web.dto.response.InitiateSigningSessionResponse;
-import com.zrs.aes.web.dto.response.SignResponse;
+import com.zrs.aes.web.exception.SigningSessionNotFoundException;
+import com.zrs.aes.web.exception.UnsignedDocumentException;
 import com.zrs.aes.web.mapper.Mapper;
 import com.zrs.aes.web.validation.FileConstraint;
 import lombok.AllArgsConstructor;
@@ -42,7 +43,9 @@ public class SigningSessionController {
     private Mapper mapper;
     private IStorageService storageService;
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @CrossOrigin(origins = "http://localhost:3000")
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<InitiateSigningSessionResponse> initiateSigningSession(@RequestParam("document") @FileConstraint MultipartFile file,
                                                                                  @AuthenticationPrincipal Jwt principal) throws MessagingException {
 
@@ -50,7 +53,7 @@ public class SigningSessionController {
         return new ResponseEntity<>(mapper.toInitiateSigningSessionResponse(signingSession), HttpStatus.CREATED);
     }
 
-    @PostMapping(value = "{signingSessionId}/sign")
+    @PostMapping(value = "{signingSessionId}/sign", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<SignResponse> sign(@PathVariable String signingSessionId, @RequestBody SignRequest signRequest,
                                              @AuthenticationPrincipal Jwt principal,
                                              HttpServletRequest httpServletRequest)
@@ -72,12 +75,10 @@ public class SigningSessionController {
             return new ResponseEntity<>(new SignResponse("Signing session not found"),
                     HttpStatus.NOT_FOUND);
         }
-
-
     }
 
     @GetMapping(value = "{signingSessionId}/document")
-    public ResponseEntity<?> downloadDocument(@PathVariable String signingSessionId) {
+    public ResponseEntity<Resource> downloadDocument(@PathVariable String signingSessionId) {
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
         if (signingSessionOptional.isPresent()) {
             if (signingSessionOptional.get().isSigned()) {
@@ -87,14 +88,11 @@ public class SigningSessionController {
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + signedDocument.getFilename() + "\"")
                         .body(signedDocument);
             } else {
-                return ResponseEntity.badRequest()
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body(new DownloadDocumentResponse("Document not signed"));
+                throw new UnsignedDocumentException("Document not signed");
+
             }
         } else {
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(new DownloadDocumentResponse("Signing session not found"));
+            throw new SigningSessionNotFoundException("Signing session not found");
         }
 
     }

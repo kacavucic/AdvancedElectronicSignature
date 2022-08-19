@@ -1,7 +1,7 @@
 package com.zrs.aes.web.mapper;
 
 import com.zrs.aes.persistence.model.SigningSession;
-import com.zrs.aes.web.dto.response.InitiateSigningSessionResponse;
+import com.zrs.aes.response.InitiateSigningSessionResponse;
 import org.springframework.stereotype.Component;
 
 @Component

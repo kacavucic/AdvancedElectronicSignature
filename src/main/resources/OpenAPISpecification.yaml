@@ -1,27 +1,185 @@
-openapi: 3.0.3
-info:
-  title: Advanced Electronic Signature
-  description: Advanced Electronic Signature API
-  version: 1.0.0
+openapi: 3.0.0
 servers:
-  - url: http://localhost:8081/resource-server
-    description: Resource server
-#  - url: http://localhost:8083/auth
-#    description: Authorization server
+  # # Added by API Auto Mocking Plugin
+  # - description: SwaggerHub API Auto Mocking
+  #   url: https://virtserver.swaggerhub.com/kacavucic/aes_api/1.0.0
+  # Added by API Auto Mocking Plugin
+  - description: SwaggerHub API Auto Mocking
+    url: https://virtserver.swaggerhub.com/kacavucic/aes_api/1.0.0
+  - url: 'http://localhost:8081/v1/aes'
+info:
+  version: '1.0.0'
+  title: 'Advanced Electronic Signature API'
+  contact:
+    name: Katarina Vučić
+    email: vucic.kat@gmail.com
+  description: REST API for signing documents with advanced electronic signature
 paths:
-  /resource-server/uploadFile:
+  /signingSessions:
     post:
-      description: Uploads document for signing
+      tags:
+        - Signing Sessions
+      summary: Initiates signing session
+      description: Initiates signing session by uploading document for signing and sending OTP to user's email address; OTP is later used as user's consent for document signing
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                document:
+                  description: Document to be signed
+                  type: string
+                  format: binary
       responses:
-        '500':
-          description: Auto generated using Swagger Inspector
+        '201':
+          $ref: '#/components/responses/InitiateSigningSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /signingSessions/{signingSessionId}/sign:
+    post:
+      tags:
+        - Signing Sessions
+      summary: Signs document belonging to signing session
+      description: Signs document belonging to signing session after verifying provided OTP
+      parameters:
+        - $ref: '#/components/parameters/SigningSessionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OTP'
+      responses:
+        '204':
+          description: Document successfully signed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /signingSessions/{signingSessionId}/document:
+    get:
+      tags:
+        - Signing Sessions
+      summary: Downloads signed document
+      description: Downloads signed document associated with specified signing session
+      parameters:
+        - $ref: '#/components/parameters/SigningSessionId'
+      responses:
+        '200':
+          $ref: '#/components/responses/SignedDocument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 components:
+  parameters:
+    SigningSessionId:
+      name: signingSessionId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    NotFound:
+      description: The specified resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InitiateSigningSession:
+      description: Returns signing session identifier for newly created resource
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - id
+            properties:
+              id:
+                type: string
+                description: Signing session ID
+    BadRequest:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - message
+            properties:
+              code:
+                description: Error code
+                type: string
+                example: "invalid-data-type"
+              message:
+                description: Error message
+                type: string
+                example: "Invalid data type"
+    SignedDocument:
+      description: Signed document
+      content:
+        application/pdf:
+          schema:
+            type: string
+            format: binary
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          description: Error code
+          type: string
+          example: "invalid-data-type"
+        message:
+          description: Error message
+          type: string
+          example: "Invalid data type"
+      required:
+        - code
+        - message
+    OTP:
+      description: OTP associated with signing session and used as singning consent
+      type: object
+      properties:
+        otp:
+          type: string
+      required:
+        - otp
   securitySchemes:
-    oauth2:
+    aes_auth:
       type: oauth2
       flows:
-        implicit:
-          authorizationUrl: http://localhost:8083/auth/realms/aes/protocol/openid-connect/auth
+        authorizationCode:
+          authorizationUrl: 'http://localhost:8083/auth/realms/aes/protocol/openid-connect/auth'
+          tokenUrl: 'http://localhost:8083/auth/realms/aes/protocol/openid-connect/token'
           scopes:
-            scope_name: read
-  
+            write: allows modifying resources
+            read: allows reading resources
+security:
+  - aes_auth:
+      - write
+      - read

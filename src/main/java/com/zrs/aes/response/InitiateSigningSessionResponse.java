@@ -1,4 +1,4 @@
-package com.zrs.aes.web.dto.request;
+package com.zrs.aes.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,6 +9,6 @@ import java.io.Serializable;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class SignRequest implements Serializable {
-    private String otp;
+public class InitiateSigningSessionResponse implements Serializable {
+    private String id;
 }

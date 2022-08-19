@@ -43,3 +43,7 @@ spring:
       max-request-size: 65MB
 keystore:
   keystore-password: tbd
+springdoc:
+  api-docs:
+    path: /api
+  default-produces-media-type: application/json

@@ -1,6 +1,8 @@
 package com.zrs.aes.web.error;
 
+import com.zrs.aes.web.exception.SigningSessionNotFoundException;
 import com.zrs.aes.web.exception.StorageException;
+import com.zrs.aes.web.exception.UnsignedDocumentException;
 import org.springframework.beans.TypeMismatchException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -12,8 +14,9 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -28,17 +31,15 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@ControllerAdvice
+@RestControllerAdvice
 public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
 
     // 400
-
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     @Override
     protected ResponseEntity<Object> handleMethodArgumentNotValid(final MethodArgumentNotValidException ex,
                                                                   final HttpHeaders headers, final HttpStatus status,
                                                                   final WebRequest request) {
-        logger.info(ex.getClass().getName());
-        //
         final List<String> errors = new ArrayList<>();
         for (final FieldError error : ex.getBindingResult().getFieldErrors()) {
             errors.add(error.getField() + ": " + error.getDefaultMessage());
@@ -50,6 +51,7 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, apiError, headers, apiError.getStatus(), request);
     }
 
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     @Override
     protected ResponseEntity<Object> handleBindException(final BindException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -65,6 +67,7 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, apiError, headers, apiError.getStatus(), request);
     }
 
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     @Override
     protected ResponseEntity<Object> handleTypeMismatch(final TypeMismatchException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -75,6 +78,7 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     @Override
     protected ResponseEntity<Object> handleMissingServletRequestPart(final MissingServletRequestPartException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -84,6 +88,7 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
     @Override
     protected ResponseEntity<Object> handleMissingServletRequestParameter(final MissingServletRequestParameterException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -93,10 +98,9 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
-    //
-
     @ExceptionHandler({MethodArgumentTypeMismatchException.class})
-    public ResponseEntity<Object> handleMethodArgumentTypeMismatch(final MethodArgumentTypeMismatchException ex, final WebRequest request) {
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleMethodArgumentTypeMismatch(final MethodArgumentTypeMismatchException ex, final WebRequest request) {
         logger.info(ex.getClass().getName());
         //
         final String error = ex.getName() + " should be of type " + ex.getRequiredType().getName();
@@ -106,7 +110,8 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler({ConstraintViolationException.class})
-    public ResponseEntity<Object> handleConstraintViolation(final ConstraintViolationException ex, final WebRequest request) {
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleConstraintViolation(final ConstraintViolationException ex, final WebRequest request) {
         logger.info(ex.getClass().getName());
         //
         final List<String> errors = new ArrayList<>();
@@ -118,8 +123,19 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
-    // 404
+    @ExceptionHandler({InvalidPathException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    protected ResponseEntity<ApiError> handleInvalidPathException(final InvalidPathException ex, final WebRequest request) {
+        logger.info(ex.getClass().getName());
+        //
+        final String error = "Invalid file path";
 
+        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.BAD_REQUEST, ex.getLocalizedMessage(), error);
+        return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
+    }
+
+    // 404
+    @ResponseStatus(HttpStatus.NOT_FOUND)
     @Override
     protected ResponseEntity<Object> handleNoHandlerFoundException(final NoHandlerFoundException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -131,7 +147,7 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     // 405
-
+    @ResponseStatus(HttpStatus.METHOD_NOT_ALLOWED)
     @Override
     protected ResponseEntity<Object> handleHttpRequestMethodNotSupported(final HttpRequestMethodNotSupportedException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -145,8 +161,20 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
-    // 415
+    // 413
+    @ExceptionHandler({MaxUploadSizeExceededException.class})
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    protected ResponseEntity<ApiError> handleMaxUploadSizeExceeded(final MaxUploadSizeExceededException ex, final WebRequest request) {
+        logger.info(ex.getClass().getName());
+        //
+        final String error = "Max upload size exceeded";
 
+        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.PAYLOAD_TOO_LARGE, ex.getLocalizedMessage(), error);
+        return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
+    }
+
+    // 415
+    @ResponseStatus(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
     @Override
     protected ResponseEntity<Object> handleHttpMediaTypeNotSupported(final HttpMediaTypeNotSupportedException ex, final HttpHeaders headers, final HttpStatus status, final WebRequest request) {
         logger.info(ex.getClass().getName());
@@ -160,22 +188,10 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
-    // 400
-
-    @ExceptionHandler({InvalidPathException.class})
-    protected ResponseEntity<Object> handleInvalidPathException(final InvalidPathException ex, final WebRequest request) {
-        logger.info(ex.getClass().getName());
-        //
-        final String error = "Invalid file path";
-
-        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.BAD_REQUEST, ex.getLocalizedMessage(), error);
-        return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
-    }
-
     // 500
-
     @ExceptionHandler({StorageException.class})
-    protected ResponseEntity<Object> handleStorageException(final StorageException ex, final WebRequest request) {
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    protected ResponseEntity<ApiError> handleStorageException(final StorageException ex, final WebRequest request) {
         logger.info(ex.getClass().getName());
         //
         final String error = "Error while storing file";
@@ -184,10 +200,9 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
-    // 500
-
     @ExceptionHandler({Exception.class})
-    public ResponseEntity<Object> handleAll(final Exception ex, final WebRequest request) {
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ResponseEntity<ApiError> handleAll(final Exception ex, final WebRequest request) {
         logger.info(ex.getClass().getName());
         logger.error("error", ex);
         //
@@ -195,18 +210,30 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
+    //FIXME implement methods for:
+    // - 401 unauthorized
+    // - 403 forbidden
 
-    // 413
-
-    @ExceptionHandler({MaxUploadSizeExceededException.class})
-    protected ResponseEntity<Object> handleMaxUploadSizeExceeded(final MaxUploadSizeExceededException ex, final WebRequest request) {
+    @ExceptionHandler({UnsignedDocumentException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    protected ResponseEntity<ApiError> handleUnsignedDocumentException(UnsignedDocumentException ex) {
         logger.info(ex.getClass().getName());
         //
-        final String error = "Max upload size exceeded";
+        final String error = "Requested document is not signed";
 
-        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.PAYLOAD_TOO_LARGE, ex.getLocalizedMessage(), error);
+        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.BAD_REQUEST, ex.getLocalizedMessage(), error);
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
     }
 
+    @ExceptionHandler({SigningSessionNotFoundException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    protected ResponseEntity<ApiError> handleSigningSessionNotFoundException(SigningSessionNotFoundException ex) {
+        logger.info(ex.getClass().getName());
+        //
+        final String error = "Signing session not found";
+
+        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.BAD_REQUEST, ex.getLocalizedMessage(), error);
+        return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
+    }
 
 }
