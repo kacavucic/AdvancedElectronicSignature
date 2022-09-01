@@ -9,5 +9,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "keystore")
 public class SigningProperties {
 
-    private String keystorePassword;
+    private String storePass;
+    private String keyPass;
 }

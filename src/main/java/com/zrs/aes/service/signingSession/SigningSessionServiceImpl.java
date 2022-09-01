@@ -81,7 +81,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal) throws IOException, GeoIp2Exception, GeneralSecurityException {
+    public String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
+            throws IOException, GeoIp2Exception, GeneralSecurityException {
 
         Path fileToBeSignedPath = storageService.load(signingSession.getFileName());
 
@@ -89,7 +90,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         String clientIp = HttpUtils.getRequestIPAddress(request);
         if (clientIp.equals("0:0:0:0:0:0:0:1") || clientIp.equals("127.0.0.1")) {
             geoIP = locationService.getLocation("87.116.160.153");
-        } else {
+        }
+        else {
             geoIP = locationService.getLocation(clientIp);
         }
         String location = geoIP.getCity() + ", " + geoIP.getCountry();
@@ -97,12 +99,14 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         File fileToBeSigned = new File(signingSession.getFilePath());
         HashCode hash = Files.hash(fileToBeSigned, Hashing.md5());
 
-        String reason = "On behalf of " + principal.getClaimAsString("given_name") + " " + principal.getClaimAsString("family_name") + ", " + principal.getClaimAsString("email") + "\n"
+        String reason = "On behalf of " + principal.getClaimAsString("given_name") + " " +
+                principal.getClaimAsString("family_name") + ", " + principal.getClaimAsString("email") + "\n"
                 + "Using OTP " + signingSession.getOtp() + " and timestamp " + signingSession.getTimestamp() + "\n"
                 +
                 "Hash value of document: " + hash;
 
-        Path signedFilePath = signingService.sign(fileToBeSignedPath, reason, location);
+        Path signedFilePath =
+                signingService.sign(fileToBeSignedPath, reason, location, principal.getClaimAsString("email"));
         File signedFile = signedFilePath.toFile();
 
         signingSession.setSigned(true);

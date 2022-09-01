@@ -3,6 +3,8 @@ server:
   servlet:
     #    context-path: /resource-server
     context-path: /v1/aes
+  tomcat:
+    max-swallow-size: -1
 file:
   upload-dir: src/main/resources/static/uploadedDocuments
   download-dir: src/main/resources/static/signedDocuments
@@ -38,11 +40,11 @@ spring:
   servlet:
     multipart:
       enabled: true
-      file-size-threshold: 2KB
-      max-file-size: 50MB
-      max-request-size: 65MB
+      max-file-size: 10MB
+      max-request-size: 15MB
 keystore:
-  keystore-password: tbd
+  store-pass: tbd
+  key-pass: tbd
 springdoc:
   api-docs:
     path: /api

@@ -7,31 +7,38 @@ import javax.validation.ConstraintValidatorContext;
 
 public class FileValidator implements ConstraintValidator<FileConstraint, MultipartFile> {
 
+//    @Value("${spring.servlet.multipart.max-file-size}")
+//    private String maxFileSize;
+
     @Override
     public void initialize(FileConstraint file) {
     }
 
     @Override
     public boolean isValid(MultipartFile file, ConstraintValidatorContext context) {
-        if (file.isEmpty()) {
-            context.disableDefaultConstraintViolation();
-            context.buildConstraintViolationWithTemplate(
-                            "Either no file has been chosen in the multipart form" +
-                                    " or the chosen file has no content")
-                    .addConstraintViolation();
-            return false;
-        }
 
         String contentType = file.getContentType();
+        boolean valid = true;
+
         if (!isSupportedContentType(contentType)) {
             context.disableDefaultConstraintViolation();
             context.buildConstraintViolationWithTemplate(
-                            "Only PDF files are allowed.")
+                            "Only PDF files are allowed")
                     .addConstraintViolation();
-            return false;
+
+            valid = false;
         }
 
-        return true;
+        if (file.isEmpty()) {
+            context.disableDefaultConstraintViolation();
+            context.buildConstraintViolationWithTemplate(
+                            "Either no file has been chosen" +
+                                    " or the chosen file has no content")
+                    .addConstraintViolation();
+            valid = false;
+        }
+
+        return valid;
     }
 
     private boolean isSupportedContentType(String contentType) {

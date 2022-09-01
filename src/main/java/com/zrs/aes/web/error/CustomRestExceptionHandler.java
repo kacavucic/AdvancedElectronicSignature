@@ -1,9 +1,11 @@
 package com.zrs.aes.web.error;
 
+import com.zrs.aes.web.exception.InvalidOTPException;
 import com.zrs.aes.web.exception.SigningSessionNotFoundException;
 import com.zrs.aes.web.exception.StorageException;
 import com.zrs.aes.web.exception.UnsignedDocumentException;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +35,9 @@ import java.util.List;
 
 @RestControllerAdvice
 public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
+
+    @Value("${spring.servlet.multipart.max-file-size}")
+    private String maxFileSize;
 
     // 400
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -113,10 +118,11 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ResponseEntity<ApiError> handleConstraintViolation(final ConstraintViolationException ex, final WebRequest request) {
         logger.info(ex.getClass().getName());
-        //
+
         final List<String> errors = new ArrayList<>();
         for (final ConstraintViolation<?> violation : ex.getConstraintViolations()) {
-            errors.add(violation.getRootBeanClass().getName() + " " + violation.getPropertyPath() + ": " + violation.getMessage());
+//            errors.add(violation.getRootBeanClass().getName() + " " + violation.getPropertyPath() + ": " + violation.getMessage());
+            errors.add(violation.getMessage());
         }
 
         final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.BAD_REQUEST, ex.getLocalizedMessage(), errors);
@@ -166,8 +172,9 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
     @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
     protected ResponseEntity<ApiError> handleMaxUploadSizeExceeded(final MaxUploadSizeExceededException ex, final WebRequest request) {
         logger.info(ex.getClass().getName());
-        //
-        final String error = "Max upload size exceeded";
+
+
+        final String error = "The maximum allowed file size for upload is " + maxFileSize;
 
         final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.PAYLOAD_TOO_LARGE, ex.getLocalizedMessage(), error);
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
@@ -226,11 +233,22 @@ public class CustomRestExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     @ExceptionHandler({SigningSessionNotFoundException.class})
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
     protected ResponseEntity<ApiError> handleSigningSessionNotFoundException(SigningSessionNotFoundException ex) {
         logger.info(ex.getClass().getName());
         //
         final String error = "Signing session not found";
+
+        final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.NOT_FOUND, ex.getLocalizedMessage(), error);
+        return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
+    }
+
+    @ExceptionHandler({InvalidOTPException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    protected ResponseEntity<ApiError> handleInvalidOTPException(InvalidOTPException ex) {
+        logger.info(ex.getClass().getName());
+
+        final String error = "Invalid or expired OTP";
 
         final ApiError apiError = new ApiError(LocalDateTime.now(), HttpStatus.BAD_REQUEST, ex.getLocalizedMessage(), error);
         return new ResponseEntity<>(apiError, new HttpHeaders(), apiError.getStatus());
