@@ -1,0 +1,13 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    username: root
+    password: kaca
+  mail:
+    username: kacafon98@gmail.com
+    password: erfpajzjwlxtreez
+keystore:
+  store-pass: katarina
+  key-pass: katarina

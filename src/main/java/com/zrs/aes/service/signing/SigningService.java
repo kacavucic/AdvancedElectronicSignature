@@ -80,7 +80,7 @@ public class SigningService {
 
         IExternalSignature signature = new PrivateKeySignature(pk, "SHA256", provider.getName());
         IExternalDigest externalDigest = new BouncyCastleDigest();
-        pdfSigner.signDetached(externalDigest, signature, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
+        pdfSigner.signDetached(externalDigest, signature, chain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
 
         return finalDestPath;
     }
