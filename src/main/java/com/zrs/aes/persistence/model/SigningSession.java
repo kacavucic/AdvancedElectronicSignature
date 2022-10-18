@@ -6,6 +6,7 @@ import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
+import java.util.Date;
 
 @Getter
 @Setter
@@ -18,6 +19,9 @@ import javax.persistence.Table;
 public class SigningSession {
     @Id
     private String id;
+
+    @Column(nullable = false)
+    private String userId;
 
     @Column(nullable = false)
     private long timestamp;
@@ -33,6 +37,9 @@ public class SigningSession {
 
     @Column
     private boolean signed;
+
+    @Column
+    private String addedOn;
 
     @Column
     private String signedFilePath;

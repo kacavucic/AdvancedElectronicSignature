@@ -9,6 +9,7 @@ import javax.mail.MessagingException;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -27,6 +28,8 @@ public interface ISigningSessionService {
 
 
     SigningSession save(SigningSession signingSession);
+
+    List<SigningSession> findByUserId(String userId);
 
     // logic
 
