@@ -1,9 +1,7 @@
 package com.zrs.aes.web.mapper;
 
 import com.zrs.aes.persistence.model.SigningSession;
-import com.zrs.aes.response.DocumentResponse;
-import com.zrs.aes.response.GetDocumentsResponse;
-import com.zrs.aes.response.InitiateSigningSessionResponse;
+import com.zrs.aes.response.*;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -16,21 +14,35 @@ public class Mapper {
         return new InitiateSigningSessionResponse(id);
     }
 
-    public SigningSession toSigningSession(InitiateSigningSessionResponse initiateSigningSessionResponse) {
-        return new SigningSession(initiateSigningSessionResponse.getId());
+    public CancelSigningSessionResponse toCancelSigningSessionResponse(SigningSession signingSession) {
+        String id = signingSession.getId();
+        return new CancelSigningSessionResponse(id);
     }
 
-    public GetDocumentsResponse toGetDocumentsResponse(List<SigningSession> signingSessions) {
-        GetDocumentsResponse response = new GetDocumentsResponse();
-        List<DocumentResponse> docs = new ArrayList<>();
+    public StartSigningSessionResponse toStartSigningSessionResponse(SigningSession signingSession) {
+        String id = signingSession.getId();
+        return new StartSigningSessionResponse(id);
+    }
+
+    public ResendOtpResponse toResendOtpResponse(SigningSession signingSession) {
+        String id = signingSession.getId();
+        int otpAttempts = signingSession.getOtpAttempts();
+        Long suspendedUntil = signingSession.getSuspendedUntil();
+        return new ResendOtpResponse(id, otpAttempts, suspendedUntil);
+    }
+
+    public GetSigningSessionsResponse toGetSigningSessionsResponse(List<SigningSession> signingSessions) {
+        GetSigningSessionsResponse response = new GetSigningSessionsResponse();
+        List<SigningSessionResponse> sessions = new ArrayList<>();
         for (SigningSession ss : signingSessions) {
-            DocumentResponse documentResponse = new DocumentResponse();
-            documentResponse.setName(ss.getFileName());
-            documentResponse.setAddedOn(ss.getAddedOn());
-            documentResponse.setStatus(ss.isSigned());
-            docs.add(documentResponse);
+            SigningSessionResponse signingSessionResponse = new SigningSessionResponse();
+            signingSessionResponse.setId(ss.getId());
+            signingSessionResponse.setDocumentName(ss.getFileName());
+            signingSessionResponse.setAddedOn(ss.getAddedOn());
+            signingSessionResponse.setStatus(ss.getStatus().getStatusString());
+            sessions.add(signingSessionResponse);
         }
-        response.setDocuments(docs);
+        response.setSigningSessions(sessions);
         return response;
     }
 

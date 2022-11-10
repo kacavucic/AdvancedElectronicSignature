@@ -3,6 +3,7 @@ package com.zrs.aes.service.signingSession;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.OTP;
 import com.zrs.aes.persistence.model.SigningSession;
+import com.zrs.aes.persistence.model.Status;
 import com.zrs.aes.persistence.repository.ISigningSessionRepository;
 import com.zrs.aes.service.email.IEmailService;
 import com.zrs.aes.service.location.GeoIP;
@@ -11,6 +12,8 @@ import com.zrs.aes.service.location.HttpUtils;
 import com.zrs.aes.service.signing.SigningService;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.service.totp.TotpService;
+import com.zrs.aes.web.exception.SigningSessionSuspendedException;
+import dev.samstevens.totp.time.SystemTimeProvider;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
@@ -29,11 +32,14 @@ import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Transactional
@@ -41,8 +47,8 @@ import java.util.UUID;
 @AllArgsConstructor
 public class SigningSessionServiceImpl implements ISigningSessionService {
 
+    private static final String PATTERN_FORMAT = "HH:mm:ss dd.MM.yyyy.";
     private final ISigningSessionRepository signingSessionRepository;
-
     private IStorageService storageService;
     private IEmailService emailService;
     private TotpService totpService;
@@ -108,26 +114,110 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws MessagingException {
+    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal)
+            throws MessagingException {
         Path filePath = storageService.store(file);
         String fileName = filePath.getFileName().toString();
 
-        String secret = UUID.randomUUID().toString();
-        OTP otp = totpService.getCodeObject(secret);
-
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd.MM.yyyy.");
         SigningSession signingSession = SigningSession.builder()
-                .id(secret)
+                .id(UUID.randomUUID().toString())
                 .userId(principal.getClaimAsString("sub"))
                 .addedOn(dtf.format(LocalDateTime.now()))
                 .filePath(filePath.toAbsolutePath().toString())
                 .fileName(fileName)
-                .otp(otp.getOtp())
-                .timestamp(otp.getTimestamp())
+                .status(Status.PENDING)
                 .build();
+        return save(signingSession);
+    }
+
+    @Override
+    public SigningSession cancelSigningSession(SigningSession signingSession, Jwt principal) {
+        signingSession.setStatus(Status.CANCELED);
+        return save(signingSession);
+    }
+
+    @Override
+    public SigningSession startSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
+            throws MessagingException {
+
+        String secret = UUID.randomUUID().toString();
+        OTP otp = totpService.getCodeObject(secret);
+
+        signingSession.setConsent(consent);
+        signingSession.setOtp(otp.getOtp());
+        signingSession.setSecret(secret);
+        signingSession.setTimestamp(otp.getTimestamp());
+        signingSession.setStatus(Status.IN_PROGRESS);
 
         emailService.sendSigningEmail(principal, signingSession.getOtp());
 
+        return save(signingSession);
+    }
+
+    @Override
+    @Transactional(noRollbackFor = SigningSessionSuspendedException.class)
+    public SigningSession resendOtp(SigningSession signingSession, Jwt principal)
+            throws MessagingException {
+
+        if (signingSession.getSuspendedUntil() != null) {
+            long currentTimestamp = new SystemTimeProvider().getTime();
+            if (currentTimestamp > signingSession.getSuspendedUntil()) {
+                return generateAndSendOtp(signingSession, 1, principal);
+            }
+            else {
+                Instant instant = Instant.ofEpochSecond(signingSession.getSuspendedUntil());
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
+                        .withZone(ZoneId.systemDefault());
+                throw new SigningSessionSuspendedException(
+                        "Signing session is suspended until " + formatter.format(instant) +
+                                " due to exceeding the number of allowed attempts to resend OTP.");
+            }
+        }
+        else {
+            if (signingSession.getOtpAttempts() == 3) {
+                long currentTimestamp = new SystemTimeProvider().getTime();
+                long plus1Minute = currentTimestamp + TimeUnit.MINUTES.toSeconds(1);
+                signingSession.setSuspendedUntil(plus1Minute);
+                save(signingSession);
+                Instant instant = Instant.ofEpochSecond(plus1Minute);
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
+                        .withZone(ZoneId.systemDefault());
+                throw new SigningSessionSuspendedException(
+                        "Signing session is suspended until " + formatter.format(instant) +
+                                " due to exceeding the number of allowed attempts to resend OTP.");
+            }
+            else {
+                return generateAndSendOtp(signingSession, signingSession.getOtpAttempts() + 1, principal);
+            }
+        }
+    }
+
+    @Override
+    public SigningSession addSigningAttempt(SigningSession signingSession, Jwt principal) {
+        signingSession.setStatus(Status.REJECTED);
+        return save(signingSession);
+    }
+
+    @Override
+    public SigningSession rejectSigning(SigningSession signingSession, Jwt principal) {
+        return null;
+    }
+
+    private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts,
+                                              Jwt principal)
+            throws MessagingException {
+        String secret = UUID.randomUUID().toString();
+        OTP otp = totpService.getCodeObject(secret);
+
+        signingSession.setOtp(otp.getOtp());
+        signingSession.setSecret(secret);
+        signingSession.setTimestamp(otp.getTimestamp());
+
+        signingSession.setOtpAttempts(otpAttempts);
+        signingSession.setSuspendedUntil(null);
+
+        emailService.sendSigningEmail(principal, signingSession.getOtp());
         return save(signingSession);
     }
 
@@ -163,7 +253,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                 signingService.sign(fileToBeSignedPath, reason, location, principal.getClaimAsString("email"));
         File signedFile = signedFilePath.toFile();
 
-        signingSession.setSigned(true);
+        signingSession.setStatus(Status.SIGNED);
         signingSession.setSignedFilePath(signedFilePath.toAbsolutePath().toString());
         signingSession.setSignedFileName(signedFilePath.getFileName().toString());
         save(signingSession);

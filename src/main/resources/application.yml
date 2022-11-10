@@ -15,6 +15,10 @@ spring:
     active: local
   jpa:
     generate-ddl: true
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
   datasource:
     username: tbd
     password: tbd

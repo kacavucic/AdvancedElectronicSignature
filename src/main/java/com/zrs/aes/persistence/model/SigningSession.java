@@ -2,11 +2,7 @@ package com.zrs.aes.persistence.model;
 
 import lombok.*;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.Table;
-import java.util.Date;
+import javax.persistence.*;
 
 @Getter
 @Setter
@@ -20,25 +16,41 @@ public class SigningSession {
     @Id
     private String id;
 
+    // TODO column annotation
     @Column(nullable = false)
     private String userId;
 
-    @Column(nullable = false)
-    private long timestamp;
+    @Column
+    private Long timestamp;
 
-    @Column(nullable = false, length = 6)
+    @Column(length = 6)
     private String otp;
 
     @Column
-    private String filePath;
+    private String secret;
+
+    @Column(columnDefinition = "integer default 0")
+    private int otpAttempts;
+
+    @Column(columnDefinition = "integer default 0")
+    private int signAttempts;
 
     @Column
+    private Long suspendedUntil;
+
+    @Column(nullable = false)
+    private String filePath;
+
+    @Column(nullable = false)
     private String fileName;
 
     @Column
-    private boolean signed;
+    private boolean consent;
 
-    @Column
+    @Column(nullable = false)
+    private Status status;
+
+    @Column(nullable = false)
     private String addedOn;
 
     @Column

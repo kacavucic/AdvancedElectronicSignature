@@ -35,5 +35,17 @@ public interface ISigningSessionService {
 
     SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws MessagingException;
 
-    String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal) throws IOException, GeoIp2Exception, GeneralSecurityException;
+    SigningSession cancelSigningSession(SigningSession signingSession, Jwt principal) throws MessagingException;
+
+    SigningSession startSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
+            throws MessagingException;
+
+    SigningSession resendOtp(SigningSession signingSession, Jwt principal) throws MessagingException;
+
+    SigningSession addSigningAttempt(SigningSession signingSession, Jwt principal);
+
+    SigningSession rejectSigning(SigningSession signingSession, Jwt principal);
+
+    String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
+            throws IOException, GeoIp2Exception, GeneralSecurityException;
 }

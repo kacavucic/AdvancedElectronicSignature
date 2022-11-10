@@ -68,13 +68,15 @@ public class StorageServiceImpl implements IStorageService {
         return targetPath;
     }
 
-    public Resource loadAsResource(String fileName) {
+    public Resource loadAsResource(String fileName, boolean signed) {
         try {
-            Path filePath = this.downloadLocation.resolve(fileName).normalize();
+            Path filePath = ((signed) ? this.downloadLocation.resolve(fileName).normalize() :
+                    this.uploadPath.resolve(fileName).normalize());
             Resource resource = new UrlResource(filePath.toUri());
             if (resource.exists()) {
                 return resource;
-            } else {
+            }
+            else {
                 throw new CustomFileNotFoundException("File not found " + fileName);
             }
         } catch (MalformedURLException ex) {

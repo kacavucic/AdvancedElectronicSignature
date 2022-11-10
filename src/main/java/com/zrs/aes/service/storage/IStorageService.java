@@ -9,7 +9,7 @@ public interface IStorageService {
 
     Path store(MultipartFile file);
 
-    Resource loadAsResource(String fileName);
+    Resource loadAsResource(String fileName, boolean signed);
 
     Path load(String filename);
 }

@@ -4,11 +4,11 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
+import java.io.Serializable;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class GetDocumentsResponse {
-   private List<DocumentResponse> documents;
+public class StartSigningSessionResponse implements Serializable {
+    private String id;
 }
