@@ -14,5 +14,8 @@ public class SigningSessionResponse {
     private String id;
     private String documentName;
     private String status;
-    private String addedOn;
+    private Long addedOn;
+    private boolean consent;
+    private int signAttempts;
+    private Long suspendedUntil;
 }

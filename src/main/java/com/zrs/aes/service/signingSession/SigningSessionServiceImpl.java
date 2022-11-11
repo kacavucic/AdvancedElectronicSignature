@@ -33,7 +33,6 @@ import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -119,11 +118,10 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         Path filePath = storageService.store(file);
         String fileName = filePath.getFileName().toString();
 
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd.MM.yyyy.");
         SigningSession signingSession = SigningSession.builder()
                 .id(UUID.randomUUID().toString())
                 .userId(principal.getClaimAsString("sub"))
-                .addedOn(dtf.format(LocalDateTime.now()))
+                .addedOn(new SystemTimeProvider().getTime())
                 .filePath(filePath.toAbsolutePath().toString())
                 .fileName(fileName)
                 .status(Status.PENDING)
@@ -177,10 +175,10 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         else {
             if (signingSession.getOtpAttempts() == 3) {
                 long currentTimestamp = new SystemTimeProvider().getTime();
-                long plus1Minute = currentTimestamp + TimeUnit.MINUTES.toSeconds(1);
-                signingSession.setSuspendedUntil(plus1Minute);
+                long plus30Minutes = currentTimestamp + TimeUnit.MINUTES.toSeconds(30);
+                signingSession.setSuspendedUntil(plus30Minutes);
                 save(signingSession);
-                Instant instant = Instant.ofEpochSecond(plus1Minute);
+                Instant instant = Instant.ofEpochSecond(plus30Minutes);
                 DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
                         .withZone(ZoneId.systemDefault());
                 throw new SigningSessionSuspendedException(
@@ -195,13 +193,14 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
     @Override
     public SigningSession addSigningAttempt(SigningSession signingSession, Jwt principal) {
-        signingSession.setStatus(Status.REJECTED);
+        signingSession.setSignAttempts(signingSession.getSignAttempts() + 1);
         return save(signingSession);
     }
 
     @Override
     public SigningSession rejectSigning(SigningSession signingSession, Jwt principal) {
-        return null;
+        signingSession.setStatus(Status.REJECTED);
+        return save(signingSession);
     }
 
     private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts,

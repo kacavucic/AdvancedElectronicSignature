@@ -40,6 +40,9 @@ public class Mapper {
             signingSessionResponse.setDocumentName(ss.getFileName());
             signingSessionResponse.setAddedOn(ss.getAddedOn());
             signingSessionResponse.setStatus(ss.getStatus().getStatusString());
+            signingSessionResponse.setConsent(ss.isConsent());
+            signingSessionResponse.setSignAttempts(ss.getSignAttempts());
+            signingSessionResponse.setSuspendedUntil(ss.getSuspendedUntil());
             sessions.add(signingSessionResponse);
         }
         response.setSigningSessions(sessions);

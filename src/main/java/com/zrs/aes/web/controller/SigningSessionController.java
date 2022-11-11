@@ -21,6 +21,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -71,7 +72,7 @@ public class SigningSessionController {
             if (signingSessionOptional.get().getStatus() != Status.PENDING &&
                     signingSessionOptional.get().getStatus() != Status.IN_PROGRESS) {
                 throw new InvalidStatusException(
-                        "Only pending signing session or signing session in progress can be canceled.");
+                        "Only pending signing sessions or signing sessions in progress can be canceled.");
             }
             else {
                 SigningSession signingSession =
@@ -102,7 +103,7 @@ public class SigningSessionController {
             if (signingSessionOptional.get().getStatus() != Status.PENDING &&
                     signingSessionOptional.get().getStatus() != Status.CANCELED) {
                 throw new InvalidStatusException(
-                        "Only pending signing session or canceled signing session can be started.");
+                        "Only pending signing sessions or canceled signing sessions can be started.");
             }
             else if (startSigningSessionRequest.isConsent() == false) {
                 throw new ConsentRequiredException("Consent is required to start signing session.");
@@ -150,6 +151,7 @@ public class SigningSessionController {
     @CrossOrigin(origins = "http://localhost:3000")
     @PostMapping(value = "{signingSessionId}/sign", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
+    @Transactional(noRollbackFor = {InvalidStatusException.class, InvalidOTPException.class})
     public ResponseEntity<SignResponse> sign(@PathVariable String signingSessionId,
                                              @RequestBody SignRequest signRequest,
                                              @AuthenticationPrincipal Jwt principal,
@@ -167,7 +169,7 @@ public class SigningSessionController {
 
             if (signingSessionOptional.get().getStatus() != Status.IN_PROGRESS) {
                 throw new InvalidStatusException(
-                        "Document can be signed only for signing session in progress.");
+                        "Document can be signed only for signing sessions in progress.");
             }
 
             if (signingSessionOptional.get().getSuspendedUntil() != null) {
@@ -181,22 +183,21 @@ public class SigningSessionController {
 
             if (signingSessionOptional.get().getSignAttempts() == 3) {
                 signingSessionService.rejectSigning(signingSessionOptional.get(), principal);
-                throw new InvalidOTPException("Invalid or expired OTP.");
+                throw new InvalidStatusException(
+                        "Your signing session has been rejected due to entering invalid or expired OTP 3 times.");
             }
             else {
-
-            }
-
-            boolean codeVerified =
-                    totpService.verifyCode(signingSessionOptional.get().getSecret(), signRequest.getOtp());
-
-            if (!codeVerified) {
-                signingSessionService.addSigningAttempt(signingSessionOptional.get(), principal);
-                throw new InvalidOTPException("Invalid or expired OTP.");
-            }
-            else {
-                return new ResponseEntity<>(new SignResponse(signingSessionService.sign(signingSessionOptional.get(),
-                        signRequest.getOtp(), httpServletRequest, principal)), HttpStatus.OK);
+                boolean codeVerified =
+                        totpService.verifyCode(signingSessionOptional.get().getSecret(), signRequest.getOtp());
+                if (!codeVerified) {
+                    signingSessionService.addSigningAttempt(signingSessionOptional.get(), principal);
+                    throw new InvalidOTPException("Invalid or expired OTP.");
+                }
+                else {
+                    return new ResponseEntity<>(
+                            new SignResponse(signingSessionService.sign(signingSessionOptional.get(),
+                                    signRequest.getOtp(), httpServletRequest, principal)), HttpStatus.OK);
+                }
             }
         }
         else {
@@ -238,7 +239,7 @@ public class SigningSessionController {
                         .headers(headers)
                         //.header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + signedDocument.getFilename() + "\"")
                         .body(unsignedDocument);
-//                throw new UnsignedDocumentException("Document not signed");
+                // throw new UnsignedDocumentException("Document not signed");
 
             }
         }

@@ -50,8 +50,8 @@ public class SigningSession {
     @Column(nullable = false)
     private Status status;
 
-    @Column(nullable = false)
-    private String addedOn;
+    @Column
+    private Long addedOn;
 
     @Column
     private String signedFilePath;

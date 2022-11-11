@@ -3,7 +3,7 @@ package com.zrs.aes.persistence.model;
 public enum Status {
     SIGNED("Signed"), //download
     PENDING("Pending"), //sign, cancel, down
-    IN_PROGRESS("In Progress"),
+    IN_PROGRESS("In Progress"), // sign
     CANCELED("Canceled"),
     REJECTED("Rejected");
 
