@@ -37,7 +37,9 @@ public interface ISigningSessionService {
 
     SigningSession cancelSigningSession(SigningSession signingSession, Jwt principal) throws MessagingException;
 
-    SigningSession startSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
+    SigningSession reviewSigningSession(SigningSession signingSession, Jwt principal) throws MessagingException;
+
+    SigningSession approveSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
             throws MessagingException;
 
     SigningSession resendOtp(SigningSession signingSession, Jwt principal) throws MessagingException;

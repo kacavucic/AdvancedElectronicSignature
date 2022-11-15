@@ -19,9 +19,14 @@ public class Mapper {
         return new CancelSigningSessionResponse(id);
     }
 
-    public StartSigningSessionResponse toStartSigningSessionResponse(SigningSession signingSession) {
+    public ReviewSigningSessionResponse toReviewSigningSessionResponse(SigningSession signingSession) {
         String id = signingSession.getId();
-        return new StartSigningSessionResponse(id);
+        return new ReviewSigningSessionResponse(id);
+    }
+
+    public ApproveSigningSessionResponse toApproveSigningSessionResponse(SigningSession signingSession) {
+        String id = signingSession.getId();
+        return new ApproveSigningSessionResponse(id);
     }
 
     public ResendOtpResponse toResendOtpResponse(SigningSession signingSession) {
@@ -35,18 +40,28 @@ public class Mapper {
         GetSigningSessionsResponse response = new GetSigningSessionsResponse();
         List<SigningSessionResponse> sessions = new ArrayList<>();
         for (SigningSession ss : signingSessions) {
-            SigningSessionResponse signingSessionResponse = new SigningSessionResponse();
-            signingSessionResponse.setId(ss.getId());
-            signingSessionResponse.setDocumentName(ss.getFileName());
-            signingSessionResponse.setAddedOn(ss.getAddedOn());
-            signingSessionResponse.setStatus(ss.getStatus().getStatusString());
-            signingSessionResponse.setConsent(ss.isConsent());
-            signingSessionResponse.setSignAttempts(ss.getSignAttempts());
-            signingSessionResponse.setSuspendedUntil(ss.getSuspendedUntil());
-            sessions.add(signingSessionResponse);
+            sessions.add(createSigningSessionResponse(ss));
         }
         response.setSigningSessions(sessions);
         return response;
+    }
+
+
+    public SigningSessionResponse toSigningSessionResponse(SigningSession signingSession) {
+        return createSigningSessionResponse(signingSession);
+    }
+
+    private SigningSessionResponse createSigningSessionResponse(SigningSession signingSession) {
+        SigningSessionResponse signingSessionResponse = new SigningSessionResponse();
+        signingSessionResponse.setId(signingSession.getId());
+        signingSessionResponse.setDocumentName(signingSession.getFileName());
+        signingSessionResponse.setAddedOn(signingSession.getAddedOn());
+        signingSessionResponse.setStatus(signingSession.getStatus().getStatusString());
+        signingSessionResponse.setConsent(signingSession.isConsent());
+        signingSessionResponse.setOtpAttempts(signingSession.getOtpAttempts());
+        signingSessionResponse.setSignAttempts(signingSession.getSignAttempts());
+        signingSessionResponse.setSuspendedUntil(signingSession.getSuspendedUntil());
+        return signingSessionResponse;
     }
 
 }

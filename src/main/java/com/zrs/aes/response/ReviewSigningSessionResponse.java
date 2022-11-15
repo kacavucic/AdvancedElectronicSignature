@@ -9,6 +9,6 @@ import java.io.Serializable;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class StartSigningSessionResponse implements Serializable {
+public class ReviewSigningSessionResponse implements Serializable {
     private String id;
 }

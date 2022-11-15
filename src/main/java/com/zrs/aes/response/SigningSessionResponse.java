@@ -17,5 +17,6 @@ public class SigningSessionResponse {
     private Long addedOn;
     private boolean consent;
     private int signAttempts;
+    private int otpAttempts;
     private Long suspendedUntil;
 }

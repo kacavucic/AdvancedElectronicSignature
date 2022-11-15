@@ -1,4 +1,4 @@
-package com.zrs.aes.request;
+package com.zrs.aes.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,6 +9,6 @@ import java.io.Serializable;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class StartSigningSessionRequest implements Serializable {
-    private boolean consent;
+public class ApproveSigningSessionResponse implements Serializable {
+    private String id;
 }

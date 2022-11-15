@@ -136,7 +136,13 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession startSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
+    public SigningSession reviewSigningSession(SigningSession signingSession, Jwt principal) {
+        signingSession.setStatus(Status.PENDING);
+        return save(signingSession);
+    }
+
+    @Override
+    public SigningSession approveSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
             throws MessagingException {
 
         String secret = UUID.randomUUID().toString();

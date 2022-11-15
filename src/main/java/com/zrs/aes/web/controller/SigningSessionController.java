@@ -4,8 +4,8 @@ package com.zrs.aes.web.controller;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.persistence.model.Status;
+import com.zrs.aes.request.ApproveSigningSessionRequest;
 import com.zrs.aes.request.SignRequest;
-import com.zrs.aes.request.StartSigningSessionRequest;
 import com.zrs.aes.response.*;
 import com.zrs.aes.service.signingSession.ISigningSessionService;
 import com.zrs.aes.service.storage.IStorageService;
@@ -69,10 +69,9 @@ public class SigningSessionController {
 
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
         if (signingSessionOptional.isPresent()) {
-            if (signingSessionOptional.get().getStatus() != Status.PENDING &&
-                    signingSessionOptional.get().getStatus() != Status.IN_PROGRESS) {
+            if (signingSessionOptional.get().getStatus() != Status.PENDING) {
                 throw new InvalidStatusException(
-                        "Only pending signing sessions or signing sessions in progress can be canceled.");
+                        "Only pending signing sessions can be canceled.");
             }
             else {
                 SigningSession signingSession =
@@ -85,17 +84,42 @@ public class SigningSessionController {
         }
     }
 
+    @CrossOrigin(origins = "http://localhost:3000")
+    @PutMapping(value = "{signingSessionId}/review", produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.OK)
+    public ResponseEntity<ReviewSigningSessionResponse> reviewSigningSession(@PathVariable String signingSessionId,
+                                                                             @AuthenticationPrincipal Jwt principal)
+            throws MessagingException {
+
+        Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
+        if (signingSessionOptional.isPresent()) {
+            if (signingSessionOptional.get().getStatus() != Status.CANCELED &&
+                    signingSessionOptional.get().getStatus() != Status.PENDING) {
+                throw new InvalidStatusException(
+                        "Only pending or canceled signing sessions can be reviewed.");
+            }
+            else {
+                SigningSession signingSession =
+                        signingSessionService.reviewSigningSession(signingSessionOptional.get(), principal);
+                return new ResponseEntity<>(mapper.toReviewSigningSessionResponse(signingSession), HttpStatus.OK);
+            }
+        }
+        else {
+            throw new SigningSessionNotFoundException("Signing session not found.");
+        }
+    }
+
     // TODO obrisati otp iz baze
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000")
-    @PutMapping(value = "{signingSessionId}/start", consumes = MediaType.APPLICATION_JSON_VALUE,
+    @PutMapping(value = "{signingSessionId}/approve", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<StartSigningSessionResponse> startSigningSession(@PathVariable String signingSessionId,
-                                                                           @RequestBody
-                                                                                   StartSigningSessionRequest startSigningSessionRequest,
-                                                                           @AuthenticationPrincipal Jwt principal)
+    public ResponseEntity<ApproveSigningSessionResponse> approveSigningSession(@PathVariable String signingSessionId,
+                                                                               @RequestBody
+                                                                                       ApproveSigningSessionRequest approveSigningSessionRequest,
+                                                                               @AuthenticationPrincipal Jwt principal)
             throws MessagingException {
 
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
@@ -103,16 +127,16 @@ public class SigningSessionController {
             if (signingSessionOptional.get().getStatus() != Status.PENDING &&
                     signingSessionOptional.get().getStatus() != Status.CANCELED) {
                 throw new InvalidStatusException(
-                        "Only pending signing sessions or canceled signing sessions can be started.");
+                        "Only pending or canceled signing sessions can be approved.");
             }
-            else if (startSigningSessionRequest.isConsent() == false) {
-                throw new ConsentRequiredException("Consent is required to start signing session.");
+            else if (!approveSigningSessionRequest.isConsent()) {
+                throw new ConsentRequiredException("Consent is required to approve signing session.");
             }
             else {
                 SigningSession signingSession =
-                        signingSessionService.startSigningSession(signingSessionOptional.get(),
-                                startSigningSessionRequest.isConsent(), principal);
-                return new ResponseEntity<>(mapper.toStartSigningSessionResponse(signingSession), HttpStatus.OK);
+                        signingSessionService.approveSigningSession(signingSessionOptional.get(),
+                                approveSigningSessionRequest.isConsent(), principal);
+                return new ResponseEntity<>(mapper.toApproveSigningSessionResponse(signingSession), HttpStatus.OK);
             }
         }
         else {
@@ -147,6 +171,7 @@ public class SigningSessionController {
         }
     }
 
+    // TODO logging
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000")
     @PostMapping(value = "{signingSessionId}/sign", consumes = MediaType.APPLICATION_JSON_VALUE,
@@ -257,6 +282,22 @@ public class SigningSessionController {
 
         List<SigningSession> signingSessions = signingSessionService.findByUserId(principal.getClaimAsString("sub"));
         return new ResponseEntity<>(mapper.toGetSigningSessionsResponse(signingSessions), HttpStatus.OK);
+    }
+
+    @CrossOrigin(origins = "http://localhost:3000")
+    @GetMapping(value = "{signingSessionId}")
+    @ResponseStatus(HttpStatus.OK)
+    public ResponseEntity<SigningSessionResponse> getSigningSession(@PathVariable String signingSessionId,
+                                                                    @AuthenticationPrincipal Jwt principal) {
+
+        Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
+        if (signingSessionOptional.isPresent()) {
+            return new ResponseEntity<>(mapper.toSigningSessionResponse(signingSessionOptional.get()), HttpStatus.OK);
+        }
+        else {
+            throw new SigningSessionNotFoundException("Signing session not found.");
+        }
+
     }
 
 }
