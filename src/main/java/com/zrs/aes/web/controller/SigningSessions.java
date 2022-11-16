@@ -13,6 +13,7 @@ import com.zrs.aes.service.totp.TotpService;
 import com.zrs.aes.web.exception.*;
 import com.zrs.aes.web.mapper.Mapper;
 import com.zrs.aes.web.validation.FileConstraint;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.AllArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -35,15 +36,17 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 
 @RestController
 @RequestMapping("signingSessions")
 @AllArgsConstructor
 @Validated
-public class SigningSessionController {
+@SecurityRequirement(name = "security_auth")
+public class SigningSessions {
 
-    private static final String PATTERN_FORMAT = "HH:mm:ss dd.MM.yyyy.";
+    private static final String PATTERN_FORMAT = "dd-MM-yyyy hh:mm:ss";
     private TotpService totpService;
     private ISigningSessionService signingSessionService;
     private Mapper mapper;
@@ -52,19 +55,18 @@ public class SigningSessionController {
     @CrossOrigin(origins = "http://localhost:3000")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ResponseEntity<InitiateSigningSessionResponse> initiateSigningSession(
+    public ResponseEntity<SigningSessionResponse> initiateSigningSession(
             @RequestParam("document") @FileConstraint MultipartFile file,
             @AuthenticationPrincipal Jwt principal) throws MessagingException {
 
         SigningSession signingSession = signingSessionService.initiateSigningSession(file, principal);
-        return new ResponseEntity<>(mapper.toInitiateSigningSessionResponse(signingSession), HttpStatus.CREATED);
+        return new ResponseEntity<>(mapper.toSigningSessionResponse(signingSession), HttpStatus.CREATED);
     }
 
     @CrossOrigin(origins = "http://localhost:3000")
     @PutMapping(value = "{signingSessionId}/cancel", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<CancelSigningSessionResponse> cancelSigningSession(@PathVariable String signingSessionId,
-                                                                             @AuthenticationPrincipal Jwt principal)
+    public ResponseEntity<CancelSigningSessionResponse> cancelSigningSession(@PathVariable UUID signingSessionId)
             throws MessagingException {
 
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
@@ -75,7 +77,7 @@ public class SigningSessionController {
             }
             else {
                 SigningSession signingSession =
-                        signingSessionService.cancelSigningSession(signingSessionOptional.get(), principal);
+                        signingSessionService.cancelSigningSession(signingSessionOptional.get());
                 return new ResponseEntity<>(mapper.toCancelSigningSessionResponse(signingSession), HttpStatus.OK);
             }
         }
@@ -87,8 +89,7 @@ public class SigningSessionController {
     @CrossOrigin(origins = "http://localhost:3000")
     @PutMapping(value = "{signingSessionId}/review", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<ReviewSigningSessionResponse> reviewSigningSession(@PathVariable String signingSessionId,
-                                                                             @AuthenticationPrincipal Jwt principal)
+    public ResponseEntity<ReviewSigningSessionResponse> reviewSigningSession(@PathVariable UUID signingSessionId)
             throws MessagingException {
 
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
@@ -100,7 +101,7 @@ public class SigningSessionController {
             }
             else {
                 SigningSession signingSession =
-                        signingSessionService.reviewSigningSession(signingSessionOptional.get(), principal);
+                        signingSessionService.reviewSigningSession(signingSessionOptional.get());
                 return new ResponseEntity<>(mapper.toReviewSigningSessionResponse(signingSession), HttpStatus.OK);
             }
         }
@@ -110,13 +111,11 @@ public class SigningSessionController {
     }
 
     // TODO obrisati otp iz baze
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000")
     @PutMapping(value = "{signingSessionId}/approve", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<ApproveSigningSessionResponse> approveSigningSession(@PathVariable String signingSessionId,
+    public ResponseEntity<ApproveSigningSessionResponse> approveSigningSession(@PathVariable UUID signingSessionId,
                                                                                @RequestBody
                                                                                        ApproveSigningSessionRequest approveSigningSessionRequest,
                                                                                @AuthenticationPrincipal Jwt principal)
@@ -129,13 +128,13 @@ public class SigningSessionController {
                 throw new InvalidStatusException(
                         "Only pending or canceled signing sessions can be approved.");
             }
-            else if (!approveSigningSessionRequest.isConsent()) {
+            else if (!approveSigningSessionRequest.getConsent()) {
                 throw new ConsentRequiredException("Consent is required to approve signing session.");
             }
             else {
                 SigningSession signingSession =
                         signingSessionService.approveSigningSession(signingSessionOptional.get(),
-                                approveSigningSessionRequest.isConsent(), principal);
+                                approveSigningSessionRequest.getConsent(), principal);
                 return new ResponseEntity<>(mapper.toApproveSigningSessionResponse(signingSession), HttpStatus.OK);
             }
         }
@@ -144,13 +143,11 @@ public class SigningSessionController {
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000")
     @PutMapping(value = "{signingSessionId}/resendOTP",
             produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<ResendOtpResponse> resendOtp(@PathVariable String signingSessionId,
+    public ResponseEntity<ResendOtpResponse> resendOtp(@PathVariable UUID signingSessionId,
                                                        @AuthenticationPrincipal Jwt principal)
             throws MessagingException {
 
@@ -172,12 +169,12 @@ public class SigningSessionController {
     }
 
     // TODO logging
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000")
     @PostMapping(value = "{signingSessionId}/sign", consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.APPLICATION_JSON_VALUE)
     @Transactional(noRollbackFor = {InvalidStatusException.class, InvalidOTPException.class})
-    public ResponseEntity<SignResponse> sign(@PathVariable String signingSessionId,
+    @ResponseStatus(HttpStatus.OK)
+    public ResponseEntity<SignResponse> sign(@PathVariable UUID signingSessionId,
                                              @RequestBody SignRequest signRequest,
                                              @AuthenticationPrincipal Jwt principal,
                                              HttpServletRequest httpServletRequest)
@@ -207,15 +204,16 @@ public class SigningSessionController {
             }
 
             if (signingSessionOptional.get().getSignAttempts() == 3) {
-                signingSessionService.rejectSigning(signingSessionOptional.get(), principal);
+                signingSessionService.rejectSigning(signingSessionOptional.get());
                 throw new InvalidStatusException(
                         "Your signing session has been rejected due to entering invalid or expired OTP 3 times.");
             }
             else {
                 boolean codeVerified =
-                        totpService.verifyCode(signingSessionOptional.get().getSecret(), signRequest.getOtp());
+                        totpService.verifyCode(signingSessionOptional.get().getOneTimePassword().getSecret(),
+                                signRequest.getOtp());
                 if (!codeVerified) {
-                    signingSessionService.addSigningAttempt(signingSessionOptional.get(), principal);
+                    signingSessionService.addSigningAttempt(signingSessionOptional.get());
                     throw new InvalidOTPException("Invalid or expired OTP.");
                 }
                 else {
@@ -230,18 +228,20 @@ public class SigningSessionController {
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000", exposedHeaders = "X-Suggested-Filename")
     @GetMapping(value = "{signingSessionId}/document")
-    public ResponseEntity<Resource> downloadDocument(@PathVariable String signingSessionId) {
+    @ResponseStatus(HttpStatus.OK)
+    public ResponseEntity<Resource> downloadDocument(@PathVariable UUID signingSessionId) {
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
         if (signingSessionOptional.isPresent()) {
             if (signingSessionOptional.get().getStatus() == Status.SIGNED) {
                 Resource signedDocument =
-                        storageService.loadAsResource(signingSessionOptional.get().getSignedFileName(), true);
+                        storageService.loadAsResource(signingSessionOptional.get().getDocument().getSignedFileName(),
+                                true);
 
                 HttpHeaders headers = new HttpHeaders();
-                headers.add("X-Suggested-Filename", "signed_" + signingSessionOptional.get().getFileName());
+                headers.add("X-Suggested-Filename",
+                        "signed_" + signingSessionOptional.get().getDocument().getFileName());
                 headers.add(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + signedDocument.getFilename() + "\"");
 
@@ -253,7 +253,7 @@ public class SigningSessionController {
             }
             else {
                 Resource unsignedDocument =
-                        storageService.loadAsResource(signingSessionOptional.get().getFileName(), false);
+                        storageService.loadAsResource(signingSessionOptional.get().getDocument().getFileName(), false);
 
                 HttpHeaders headers = new HttpHeaders();
                 headers.add(HttpHeaders.CONTENT_DISPOSITION,
@@ -274,21 +274,19 @@ public class SigningSessionController {
 
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     @CrossOrigin(origins = "http://localhost:3000")
     @GetMapping
     @ResponseStatus(HttpStatus.OK)
     public ResponseEntity<GetSigningSessionsResponse> getSigningSessions(@AuthenticationPrincipal Jwt principal) {
 
-        List<SigningSession> signingSessions = signingSessionService.findByUserId(principal.getClaimAsString("sub"));
+        List<SigningSession> signingSessions = signingSessionService.findByUserId(UUID.fromString(principal.getClaimAsString("sub")));
         return new ResponseEntity<>(mapper.toGetSigningSessionsResponse(signingSessions), HttpStatus.OK);
     }
 
     @CrossOrigin(origins = "http://localhost:3000")
     @GetMapping(value = "{signingSessionId}")
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<SigningSessionResponse> getSigningSession(@PathVariable String signingSessionId,
-                                                                    @AuthenticationPrincipal Jwt principal) {
+    public ResponseEntity<SigningSessionResponse> getSigningSession(@PathVariable UUID signingSessionId) {
 
         Optional<SigningSession> signingSessionOptional = signingSessionService.findById(signingSessionId);
         if (signingSessionOptional.isPresent()) {

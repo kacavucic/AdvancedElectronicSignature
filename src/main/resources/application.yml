@@ -28,8 +28,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8083/auth/realms/aes
-          jwk-set-uri: http://localhost:8083/auth/realms/aes/protocol/openid-connect/certs
+          issuer-uri: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes
+          jwk-set-uri: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/certs
   mail:
     host: smtp.gmail.com
     username: tbd
@@ -49,7 +49,15 @@ spring:
 keystore:
   store-pass: tbd
   key-pass: tbd
+
 springdoc:
-  api-docs:
-    path: /api
-  default-produces-media-type: application/json
+  version: '@springdoc.version@'
+  swagger-ui:
+    oauth:
+      clientId: aes-app
+      clientSecret: fz4s7y2TY4dMgotxUDZdYqXpzyCpWOub
+    try-it-out-enabled: false
+    oauth2-redirect-url: /swagger-ui/oauth2-redirect.html
+  oAuthFlow:
+    authorizationUrl: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/auth
+    tokenUrl: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/token

@@ -1,17 +1,23 @@
 package com.zrs.aes.response;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.io.Serializable;
 import java.util.UUID;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class ResendOtpResponse implements Serializable {
+@Builder
+public class DocumentResponse {
+
     private UUID id;
-    private int otpAttempts;
-    private Long suspendedUntil;
+
+    private String fileName;
+
+    private Long addedOn;
+
+    private String signedFileName;
 }

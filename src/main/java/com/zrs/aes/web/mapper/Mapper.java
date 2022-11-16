@@ -6,31 +6,32 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Component
 public class Mapper {
-    public InitiateSigningSessionResponse toInitiateSigningSessionResponse(SigningSession signingSession) {
-        String id = signingSession.getId();
-        return new InitiateSigningSessionResponse(id);
+
+    public SigningSessionResponse toSigningSessionResponse(SigningSession signingSession) {
+        return createSigningSessionResponse(signingSession);
     }
 
     public CancelSigningSessionResponse toCancelSigningSessionResponse(SigningSession signingSession) {
-        String id = signingSession.getId();
+        UUID id = signingSession.getId();
         return new CancelSigningSessionResponse(id);
     }
 
     public ReviewSigningSessionResponse toReviewSigningSessionResponse(SigningSession signingSession) {
-        String id = signingSession.getId();
+        UUID id = signingSession.getId();
         return new ReviewSigningSessionResponse(id);
     }
 
     public ApproveSigningSessionResponse toApproveSigningSessionResponse(SigningSession signingSession) {
-        String id = signingSession.getId();
+        UUID id = signingSession.getId();
         return new ApproveSigningSessionResponse(id);
     }
 
     public ResendOtpResponse toResendOtpResponse(SigningSession signingSession) {
-        String id = signingSession.getId();
+        UUID id = signingSession.getId();
         int otpAttempts = signingSession.getOtpAttempts();
         Long suspendedUntil = signingSession.getSuspendedUntil();
         return new ResendOtpResponse(id, otpAttempts, suspendedUntil);
@@ -46,21 +47,26 @@ public class Mapper {
         return response;
     }
 
-
-    public SigningSessionResponse toSigningSessionResponse(SigningSession signingSession) {
-        return createSigningSessionResponse(signingSession);
-    }
-
     private SigningSessionResponse createSigningSessionResponse(SigningSession signingSession) {
-        SigningSessionResponse signingSessionResponse = new SigningSessionResponse();
-        signingSessionResponse.setId(signingSession.getId());
-        signingSessionResponse.setDocumentName(signingSession.getFileName());
-        signingSessionResponse.setAddedOn(signingSession.getAddedOn());
-        signingSessionResponse.setStatus(signingSession.getStatus().getStatusString());
-        signingSessionResponse.setConsent(signingSession.isConsent());
-        signingSessionResponse.setOtpAttempts(signingSession.getOtpAttempts());
-        signingSessionResponse.setSignAttempts(signingSession.getSignAttempts());
-        signingSessionResponse.setSuspendedUntil(signingSession.getSuspendedUntil());
+        SigningSessionResponse signingSessionResponse = SigningSessionResponse.builder()
+                .id(signingSession.getId())
+                .userId(signingSession.getUserId())
+                .otpAttempts(signingSession.getOtpAttempts())
+                .signAttempts(signingSession.getSignAttempts())
+                .suspendedUntil(signingSession.getSuspendedUntil())
+                .consent(signingSession.getConsent())
+                .status(signingSession.getStatus())
+                .build();
+
+        DocumentResponse documentResponse = DocumentResponse.builder()
+                .id(signingSession.getDocument().getId())
+                .fileName(signingSession.getDocument().getFileName())
+                .addedOn(signingSession.getDocument().getAddedOn())
+                .signedFileName(signingSession.getDocument().getSignedFileName())
+                .build();
+
+        signingSessionResponse.setDocument(documentResponse);
+
         return signingSessionResponse;
     }
 

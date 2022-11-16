@@ -1,8 +1,10 @@
 package com.zrs.aes.persistence.model;
 
 import lombok.*;
+import org.hibernate.annotations.Type;
 
 import javax.persistence.*;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -11,23 +13,25 @@ import javax.persistence.*;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "signing_session")
+@Table
 public class SigningSession {
+
     @Id
-    private String id;
+    @GeneratedValue
+    @Type(type = "uuid-char")
+    private UUID id;
 
-    // TODO column annotation
+    @OneToOne(cascade = CascadeType.ALL)
+    @PrimaryKeyJoinColumn
+    private Document document;
+
+    @OneToOne(cascade = CascadeType.ALL)
+    @PrimaryKeyJoinColumn
+    private OneTimePassword oneTimePassword;
+
     @Column(nullable = false)
-    private String userId;
-
-    @Column
-    private Long timestamp;
-
-    @Column(length = 6)
-    private String otp;
-
-    @Column
-    private String secret;
+    @Type(type = "uuid-char")
+    private UUID userId;
 
     @Column(columnDefinition = "integer default 0")
     private int otpAttempts;
@@ -38,28 +42,14 @@ public class SigningSession {
     @Column
     private Long suspendedUntil;
 
-    @Column(nullable = false)
-    private String filePath;
-
-    @Column(nullable = false)
-    private String fileName;
-
     @Column
-    private boolean consent;
+    private Boolean consent;
 
     @Column(nullable = false)
     private Status status;
 
-    @Column
-    private Long addedOn;
 
-    @Column
-    private String signedFilePath;
-
-    @Column
-    private String signedFileName;
-
-    public SigningSession(String id) {
+    public SigningSession(UUID id) {
         this.id = id;
     }
 }

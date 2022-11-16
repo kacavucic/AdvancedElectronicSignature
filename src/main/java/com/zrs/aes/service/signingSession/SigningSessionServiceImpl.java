@@ -1,7 +1,7 @@
 package com.zrs.aes.service.signingSession;
 
 import com.maxmind.geoip2.exception.GeoIp2Exception;
-import com.zrs.aes.persistence.model.OTP;
+import com.zrs.aes.persistence.model.Document;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.persistence.model.Status;
 import com.zrs.aes.persistence.repository.ISigningSessionRepository;
@@ -93,13 +93,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public Optional<SigningSession> findById(String id) {
+    public Optional<SigningSession> findById(UUID id) {
         return signingSessionRepository.findById(id);
-    }
-
-    @Override
-    public SigningSession findByFilePath(String filePath) {
-        return signingSessionRepository.findByFilePath(filePath);
     }
 
     @Override
@@ -108,53 +103,53 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public List<SigningSession> findByUserId(String userId) {
+    public List<SigningSession> findByUserId(UUID userId) {
         return signingSessionRepository.findByUserId(userId);
     }
 
     @Override
-    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal)
-            throws MessagingException {
+    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal) {
+
         Path filePath = storageService.store(file);
         String fileName = filePath.getFileName().toString();
 
         SigningSession signingSession = SigningSession.builder()
-                .id(UUID.randomUUID().toString())
-                .userId(principal.getClaimAsString("sub"))
-                .addedOn(new SystemTimeProvider().getTime())
-                .filePath(filePath.toAbsolutePath().toString())
-                .fileName(fileName)
+                .userId(UUID.fromString(principal.getClaimAsString("sub")))
                 .status(Status.PENDING)
                 .build();
+
+        Document document = Document.builder()
+                .signingSession(signingSession)
+                .filePath(filePath.toAbsolutePath().toString())
+                .fileName(fileName)
+                .addedOn(new SystemTimeProvider().getTime())
+                .build();
+
+        signingSession.setDocument(document);
+
         return save(signingSession);
     }
 
     @Override
-    public SigningSession cancelSigningSession(SigningSession signingSession, Jwt principal) {
+    public SigningSession cancelSigningSession(SigningSession signingSession) {
         signingSession.setStatus(Status.CANCELED);
         return save(signingSession);
     }
 
     @Override
-    public SigningSession reviewSigningSession(SigningSession signingSession, Jwt principal) {
+    public SigningSession reviewSigningSession(SigningSession signingSession) {
         signingSession.setStatus(Status.PENDING);
         return save(signingSession);
     }
 
     @Override
-    public SigningSession approveSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
+    public SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Jwt principal)
             throws MessagingException {
 
-        String secret = UUID.randomUUID().toString();
-        OTP otp = totpService.getCodeObject(secret);
-
         signingSession.setConsent(consent);
-        signingSession.setOtp(otp.getOtp());
-        signingSession.setSecret(secret);
-        signingSession.setTimestamp(otp.getTimestamp());
+        signingSession.setOneTimePassword(totpService.getCodeObject());
         signingSession.setStatus(Status.IN_PROGRESS);
-
-        emailService.sendSigningEmail(principal, signingSession.getOtp());
+        emailService.sendSigningEmail(principal, signingSession.getOneTimePassword().getOtp());
 
         return save(signingSession);
     }
@@ -198,31 +193,25 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession addSigningAttempt(SigningSession signingSession, Jwt principal) {
+    public void addSigningAttempt(SigningSession signingSession) {
         signingSession.setSignAttempts(signingSession.getSignAttempts() + 1);
-        return save(signingSession);
+        save(signingSession);
     }
 
     @Override
-    public SigningSession rejectSigning(SigningSession signingSession, Jwt principal) {
+    public void rejectSigning(SigningSession signingSession) {
         signingSession.setStatus(Status.REJECTED);
-        return save(signingSession);
+        save(signingSession);
     }
 
-    private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts,
-                                              Jwt principal)
+    private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts, Jwt principal)
             throws MessagingException {
-        String secret = UUID.randomUUID().toString();
-        OTP otp = totpService.getCodeObject(secret);
 
-        signingSession.setOtp(otp.getOtp());
-        signingSession.setSecret(secret);
-        signingSession.setTimestamp(otp.getTimestamp());
-
+        signingSession.setOneTimePassword(totpService.getCodeObject());
         signingSession.setOtpAttempts(otpAttempts);
         signingSession.setSuspendedUntil(null);
 
-        emailService.sendSigningEmail(principal, signingSession.getOtp());
+        emailService.sendSigningEmail(principal, signingSession.getOneTimePassword().getOtp());
         return save(signingSession);
     }
 
@@ -230,7 +219,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     public String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
             throws IOException, GeoIp2Exception, GeneralSecurityException {
 
-        Path fileToBeSignedPath = storageService.load(signingSession.getFileName());
+        Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
 
         GeoIP geoIP;
         String clientIp = HttpUtils.getRequestIPAddress(request);
@@ -242,7 +231,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         }
         String location = geoIP.getCity() + ", " + geoIP.getCountry();
 
-        File fileToBeSigned = new File(signingSession.getFilePath());
+        File fileToBeSigned = new File(signingSession.getDocument().getFilePath());
 //        HashCode hash = Files.hash(fileToBeSigned, Hashing.md5());
         MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
         String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
@@ -250,7 +239,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
         String reason = "On behalf of " + principal.getClaimAsString("given_name") + " " +
                 principal.getClaimAsString("family_name") + ", " + principal.getClaimAsString("email") + "\n"
-                + "Using OTP " + signingSession.getOtp() + " and timestamp " + signingSession.getTimestamp() + "\n"
+                + "Using OTP " + signingSession.getOneTimePassword().getOtp() + " and timestamp " +
+                signingSession.getOneTimePassword().getTimestamp() + "\n"
                 +
                 "Hash value of document: " + shaChecksum;
 
@@ -259,8 +249,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         File signedFile = signedFilePath.toFile();
 
         signingSession.setStatus(Status.SIGNED);
-        signingSession.setSignedFilePath(signedFilePath.toAbsolutePath().toString());
-        signingSession.setSignedFileName(signedFilePath.getFileName().toString());
+        signingSession.getDocument().setSignedFilePath(signedFilePath.toAbsolutePath().toString());
+        signingSession.getDocument().setSignedFileName(signedFilePath.getFileName().toString());
         save(signingSession);
 
         return principal.getClaimAsString("given_name")

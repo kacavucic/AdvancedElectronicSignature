@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Manipulates a signing session details
@@ -21,32 +22,28 @@ import java.util.Optional;
 public interface ISigningSessionService {
 
 
-    Optional<SigningSession> findById(String id);
-
-
-    SigningSession findByFilePath(String filepath);
-
+    Optional<SigningSession> findById(UUID id);
 
     SigningSession save(SigningSession signingSession);
 
-    List<SigningSession> findByUserId(String userId);
+    List<SigningSession> findByUserId(UUID userId);
 
     // logic
 
     SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws MessagingException;
 
-    SigningSession cancelSigningSession(SigningSession signingSession, Jwt principal) throws MessagingException;
+    SigningSession cancelSigningSession(SigningSession signingSession) throws MessagingException;
 
-    SigningSession reviewSigningSession(SigningSession signingSession, Jwt principal) throws MessagingException;
+    SigningSession reviewSigningSession(SigningSession signingSession) throws MessagingException;
 
-    SigningSession approveSigningSession(SigningSession signingSession, boolean consent, Jwt principal)
+    SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Jwt principal)
             throws MessagingException;
 
     SigningSession resendOtp(SigningSession signingSession, Jwt principal) throws MessagingException;
 
-    SigningSession addSigningAttempt(SigningSession signingSession, Jwt principal);
+    void addSigningAttempt(SigningSession signingSession);
 
-    SigningSession rejectSigning(SigningSession signingSession, Jwt principal);
+    void rejectSigning(SigningSession signingSession);
 
     String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
             throws IOException, GeoIp2Exception, GeneralSecurityException;
