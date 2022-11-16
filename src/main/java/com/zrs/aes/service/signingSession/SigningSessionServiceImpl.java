@@ -12,7 +12,8 @@ import com.zrs.aes.service.location.HttpUtils;
 import com.zrs.aes.service.signing.SigningService;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.service.totp.TotpService;
-import com.zrs.aes.web.exception.SigningSessionSuspendedException;
+import com.zrs.aes.web.customexceptions.EntityNotFoundException;
+import com.zrs.aes.web.customexceptions.SigningSessionSuspendedException;
 import dev.samstevens.totp.time.SystemTimeProvider;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -93,8 +94,12 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public Optional<SigningSession> findById(UUID id) {
-        return signingSessionRepository.findById(id);
+    public SigningSession findById(UUID id) {
+        Optional<SigningSession> signingSessionOptional = signingSessionRepository.findById(id);
+        if (!signingSessionOptional.isPresent()) {
+            throw new EntityNotFoundException(SigningSession.class, "id", id.toString());
+        }
+        return signingSessionOptional.get();
     }
 
     @Override
@@ -104,7 +109,11 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
     @Override
     public List<SigningSession> findByUserId(UUID userId) {
-        return signingSessionRepository.findByUserId(userId);
+        List<SigningSession> signingSessions = signingSessionRepository.findByUserId(userId);
+        if (signingSessions.isEmpty()) {
+            throw new EntityNotFoundException(SigningSession.class, "userId", userId.toString());
+        }
+        return signingSessions;
     }
 
     @Override

@@ -1,7 +1,7 @@
 package com.zrs.aes.service.storage;
 
-import com.zrs.aes.web.exception.CustomFileNotFoundException;
-import com.zrs.aes.web.exception.StorageException;
+import com.zrs.aes.web.customexceptions.CustomFileNotFoundException;
+import com.zrs.aes.web.customexceptions.StorageException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;

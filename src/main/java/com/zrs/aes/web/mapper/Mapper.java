@@ -37,8 +37,8 @@ public class Mapper {
         return new ResendOtpResponse(id, otpAttempts, suspendedUntil);
     }
 
-    public GetSigningSessionsResponse toGetSigningSessionsResponse(List<SigningSession> signingSessions) {
-        GetSigningSessionsResponse response = new GetSigningSessionsResponse();
+    public SigningSessionsResponse toSigningSessionsResponse(List<SigningSession> signingSessions) {
+        SigningSessionsResponse response = new SigningSessionsResponse();
         List<SigningSessionResponse> sessions = new ArrayList<>();
         for (SigningSession ss : signingSessions) {
             sessions.add(createSigningSessionResponse(ss));

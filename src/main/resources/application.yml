@@ -61,3 +61,4 @@ springdoc:
   oAuthFlow:
     authorizationUrl: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/auth
     tokenUrl: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/token
+  default-produces-media-type: application/json

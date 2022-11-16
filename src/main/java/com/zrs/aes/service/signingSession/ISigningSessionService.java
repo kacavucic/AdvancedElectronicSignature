@@ -22,7 +22,7 @@ import java.util.UUID;
 public interface ISigningSessionService {
 
 
-    Optional<SigningSession> findById(UUID id);
+    SigningSession findById(UUID id);
 
     SigningSession save(SigningSession signingSession);
 

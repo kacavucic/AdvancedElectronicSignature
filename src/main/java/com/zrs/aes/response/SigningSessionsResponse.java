@@ -9,6 +9,6 @@ import java.util.List;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class GetSigningSessionsResponse {
+public class SigningSessionsResponse {
    private List<SigningSessionResponse> signingSessions;
 }
