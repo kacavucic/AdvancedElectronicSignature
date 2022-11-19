@@ -31,13 +31,13 @@ public class StorageServiceImpl implements IStorageService {
         try {
             Files.createDirectories(this.uploadPath);
         } catch (Exception ex) {
-            throw new StorageException("Could not create the directory where the uploaded files will be stored.", ex);
+            throw new StorageException("Could not create the directory where the uploaded files will be stored", ex);
         }
 
         try {
             Files.createDirectories(this.downloadLocation);
         } catch (Exception ex) {
-            throw new StorageException("Could not create the directory where files for download will be stored.", ex);
+            throw new StorageException("Could not create the directory where files for download will be stored", ex);
         }
     }
 
@@ -55,14 +55,14 @@ public class StorageServiceImpl implements IStorageService {
                     nesto/file.txt
                     /../../file.txt
              */
-            throw new StorageException("Cannot store file outside current directory.");
+            throw new StorageException("Cannot store file outside current directory");
         }
 
         try {
             Files.copy(file.getInputStream(), targetPath,
                     StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            throw new StorageException("Could not store file " + file.getName(), e);
+            throw new StorageException("Could not store file: " + file.getName(), e);
         }
 
         return targetPath;
@@ -77,10 +77,10 @@ public class StorageServiceImpl implements IStorageService {
                 return resource;
             }
             else {
-                throw new CustomFileNotFoundException("File not found " + fileName);
+                throw new CustomFileNotFoundException("File not found: " + fileName);
             }
         } catch (MalformedURLException ex) {
-            throw new CustomFileNotFoundException("File not found " + fileName, ex);
+            throw new CustomFileNotFoundException("File not found: " + fileName, ex);
         }
     }
 

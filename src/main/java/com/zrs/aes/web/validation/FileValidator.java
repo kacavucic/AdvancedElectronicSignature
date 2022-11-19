@@ -20,13 +20,15 @@ public class FileValidator implements ConstraintValidator<FileConstraint, Multip
         String contentType = file.getContentType();
         boolean valid = true;
 
-        if (!isSupportedContentType(contentType)) {
-            context.disableDefaultConstraintViolation();
-            context.buildConstraintViolationWithTemplate(
-                            "Only PDF files are allowed")
-                    .addConstraintViolation();
+        if (contentType != null) {
+            if (!isSupportedContentType(contentType)) {
+                context.disableDefaultConstraintViolation();
+                context.buildConstraintViolationWithTemplate(
+                                "Only PDF files are allowed")
+                        .addConstraintViolation();
 
-            valid = false;
+                valid = false;
+            }
         }
 
         if (file.isEmpty()) {

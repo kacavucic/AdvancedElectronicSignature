@@ -7,10 +7,9 @@ public enum Status {
     CANCELED("Canceled"),
     REJECTED("Rejected");
 
-    // resend otp
-    // 3 nova endpointa renew, cancel, reject
-    // check if doc is already signed
-    //mitm upload pa download aleksandar da objasni
+    // TODO ovo sve
+    // vrati keycloak times
+    // mitm upload pa download aleksandar da objasni
     // max file exceeded i file type i back i front validation
 
     private String statusString;

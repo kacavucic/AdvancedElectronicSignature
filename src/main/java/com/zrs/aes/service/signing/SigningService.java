@@ -5,17 +5,21 @@ import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.kernel.pdf.StampingProperties;
 import com.itextpdf.signatures.*;
+import com.maxmind.geoip2.exception.GeoIp2Exception;
+import com.zrs.aes.persistence.model.SigningSession;
+import com.zrs.aes.service.location.GeoIP;
+import com.zrs.aes.service.location.GeoIPLocationService;
+import com.zrs.aes.service.location.HttpUtils;
+import com.zrs.aes.service.storage.IStorageService;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
+import javax.servlet.http.HttpServletRequest;
 import java.io.*;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.GeneralSecurityException;
-import java.security.KeyStore;
-import java.security.PrivateKey;
-import java.security.Security;
+import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.Enumeration;
@@ -29,15 +33,56 @@ public class SigningService {
     final String STORE_PATH = "src/main/resources/encryption/keystore.jks";
     final char[] STORE_PASS;
     final char[] KEY_PASS;
+    private IStorageService storageService;
+    private GeoIPLocationService locationService;
 
-    @Autowired
-    public SigningService(SigningProperties signingProperties) {
+    public SigningService(SigningProperties signingProperties, IStorageService storageService,
+                          GeoIPLocationService locationService) {
         this.STORE_PASS = signingProperties.getStorePass().toCharArray();
         this.KEY_PASS = signingProperties.getKeyPass().toCharArray();
+        this.storageService = storageService;
+        this.locationService = locationService;
     }
 
-    public Path sign(Path fileToBeSignedPath, String reason, String location, String contact)
-            throws GeneralSecurityException, IOException {
+    private static String getFileChecksum(MessageDigest digest, File file) throws IOException {
+        //Get file input stream for reading the file content
+        FileInputStream fis = new FileInputStream(file);
+
+        //Create byte array to read data in chunks
+        byte[] byteArray = new byte[1024];
+        int bytesCount = 0;
+
+        //Read file data and update in message digest
+        while ((bytesCount = fis.read(byteArray)) != -1) {
+            digest.update(byteArray, 0, bytesCount);
+        }
+        ;
+
+        //close the stream; We don't need it now.
+        fis.close();
+
+        //Get the hash's bytes
+        byte[] bytes = digest.digest();
+
+        //This bytes[] has bytes in decimal format;
+        //Convert it to hexadecimal format
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < bytes.length; i++) {
+            sb.append(Integer.toString((bytes[i] & 0xff) + 0x100, 16).substring(1));
+        }
+
+        //return complete hash
+        return sb.toString();
+    }
+
+    public Path sign(SigningSession signingSession, HttpServletRequest request, Jwt principal)
+            throws IOException, GeneralSecurityException, GeoIp2Exception {
+
+        Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
+
+        String reason = prepareReason(signingSession, principal);
+        String location = prepareLocation(request);
+        String contact = principal.getClaimAsString("email");
 
         ///////////////////////////////////////////////////
         File file = new File(BASE_DEST);
@@ -63,7 +108,8 @@ public class SigningService {
 
         PdfReader pdfReader = new PdfReader(fileToBeSignedPath.toString());
         OutputStream result = new FileOutputStream(finalDestPath.toString());
-        PdfSigner pdfSigner = new PdfSigner(pdfReader, result, new StampingProperties().preserveEncryption().useAppendMode());
+        PdfSigner pdfSigner =
+                new PdfSigner(pdfReader, result, new StampingProperties().preserveEncryption().useAppendMode());
         pdfSigner.setFieldName("Advanced Electronic Signature");
 //        pdfSigner.setCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
 
@@ -83,5 +129,32 @@ public class SigningService {
         pdfSigner.signDetached(externalDigest, signature, chain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
 
         return finalDestPath;
+    }
+
+    private String prepareLocation(HttpServletRequest request) throws IOException, GeoIp2Exception {
+        GeoIP geoIP;
+        String clientIp = HttpUtils.getRequestIPAddress(request);
+        if (clientIp.equals("0:0:0:0:0:0:0:1") || clientIp.equals("127.0.0.1")) {
+            geoIP = locationService.getLocation("87.116.160.153");
+        }
+        else {
+            geoIP = locationService.getLocation(clientIp);
+        }
+        return geoIP.getCity() + ", " + geoIP.getCountry();
+    }
+
+    private String prepareReason(SigningSession signingSession, Jwt principal)
+            throws IOException, NoSuchAlgorithmException {
+        File fileToBeSigned = new File(signingSession.getDocument().getFilePath());
+//        HashCode hash = Files.hash(fileToBeSigned, Hashing.md5());
+        MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
+        String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
+
+        return "On behalf of " + principal.getClaimAsString("given_name") + " " +
+                principal.getClaimAsString("family_name") + ", " + principal.getClaimAsString("email") + "\n"
+                + "Using OTP " + signingSession.getOneTimePassword().getOtp() + " and timestamp " +
+                signingSession.getOneTimePassword().getTimestamp() + "\n"
+                +
+                "Hash value of document: " + shaChecksum;
     }
 }

@@ -2,6 +2,7 @@ package com.zrs.aes.service.signingSession;
 
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
+import org.springframework.core.io.Resource;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -10,7 +11,6 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -30,11 +30,9 @@ public interface ISigningSessionService {
 
     // logic
 
-    SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws MessagingException;
+    SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws IOException;
 
-    SigningSession cancelSigningSession(SigningSession signingSession) throws MessagingException;
-
-    SigningSession reviewSigningSession(SigningSession signingSession) throws MessagingException;
+    SigningSession cancelSigningSession(SigningSession signingSession);
 
     SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Jwt principal)
             throws MessagingException;
@@ -45,6 +43,10 @@ public interface ISigningSessionService {
 
     void rejectSigning(SigningSession signingSession);
 
-    String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
-            throws IOException, GeoIp2Exception, GeneralSecurityException;
+    SigningSession sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
+            throws IOException, GeneralSecurityException, GeoIp2Exception;
+
+    Resource getUnsignedDocument(SigningSession signingSession);
+
+    Resource getSignedDocument(SigningSession signingSession);
 }

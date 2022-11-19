@@ -1,40 +1,19 @@
 package com.zrs.aes.web.mapper;
 
 import com.zrs.aes.persistence.model.SigningSession;
-import com.zrs.aes.response.*;
+import com.zrs.aes.response.DocumentResponse;
+import com.zrs.aes.response.SigningSessionResponse;
+import com.zrs.aes.response.SigningSessionsResponse;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Component
 public class Mapper {
 
     public SigningSessionResponse toSigningSessionResponse(SigningSession signingSession) {
         return createSigningSessionResponse(signingSession);
-    }
-
-    public CancelSigningSessionResponse toCancelSigningSessionResponse(SigningSession signingSession) {
-        UUID id = signingSession.getId();
-        return new CancelSigningSessionResponse(id);
-    }
-
-    public ReviewSigningSessionResponse toReviewSigningSessionResponse(SigningSession signingSession) {
-        UUID id = signingSession.getId();
-        return new ReviewSigningSessionResponse(id);
-    }
-
-    public ApproveSigningSessionResponse toApproveSigningSessionResponse(SigningSession signingSession) {
-        UUID id = signingSession.getId();
-        return new ApproveSigningSessionResponse(id);
-    }
-
-    public ResendOtpResponse toResendOtpResponse(SigningSession signingSession) {
-        UUID id = signingSession.getId();
-        int otpAttempts = signingSession.getOtpAttempts();
-        Long suspendedUntil = signingSession.getSuspendedUntil();
-        return new ResendOtpResponse(id, otpAttempts, suspendedUntil);
     }
 
     public SigningSessionsResponse toSigningSessionsResponse(List<SigningSession> signingSessions) {

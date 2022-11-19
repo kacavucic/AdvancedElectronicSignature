@@ -1,6 +1,6 @@
 package com.zrs.aes.web.error;
 
-import com.zrs.aes.web.customexceptions.EntityNotFoundException;
+import com.zrs.aes.web.customexceptions.*;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +16,7 @@ import org.springframework.validation.BindException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingPathVariableException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -23,10 +24,12 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import java.nio.file.InvalidPathException;
 import java.util.Objects;
 
 import static org.springframework.http.HttpStatus.*;
@@ -128,7 +131,7 @@ public class RestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, apiError.getStatus());
     }
 
-    // TODO @ResponseStatus
+    // No @ResponseStatus
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiError> handleDataIntegrityViolation(DataIntegrityViolationException ex,
                                                                  WebRequest request) {
@@ -194,7 +197,7 @@ public class RestExceptionHandler extends ResponseEntityExceptionHandler {
         logger.info(ex.getClass().getName());
         ApiError apiError = new ApiError(BAD_REQUEST);
         apiError.setMessage(
-                String.format("The parameter '%s' of value '%s' could not be converted to type '%s'", ex.getName(),
+                String.format("The parameter '%s' of value '%s' should be of type '%s'", ex.getName(),
                         ex.getValue(), Objects.requireNonNull(ex.getRequiredType()).getSimpleName()));
         apiError.setDebugMessage(ex.getMessage());
         return new ResponseEntity<>(apiError, apiError.getStatus());
@@ -211,90 +214,109 @@ public class RestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, apiError.getStatus());
     }
 
-    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiError> handleAll(Exception ex, WebRequest request) {
+//    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+//    @ExceptionHandler(Exception.class)
+//    public ResponseEntity<ApiError> handleAll(Exception ex, WebRequest request) {
+//        logger.info(ex.getClass().getName());
+//        ApiError apiError = new ApiError(INTERNAL_SERVER_ERROR, ex);
+//        return new ResponseEntity<>(apiError, apiError.getStatus());
+//    }
+
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @Override
+    protected ResponseEntity<Object> handleMissingPathVariable(MissingPathVariableException ex, HttpHeaders headers,
+                                                               HttpStatus status, WebRequest request) {
         logger.info(ex.getClass().getName());
-        ApiError apiError = new ApiError(INTERNAL_SERVER_ERROR, ex);
+        String error = "Path variable is missing";
+        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
         return new ResponseEntity<>(apiError, apiError.getStatus());
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//    @ExceptionHandler(InvalidPathException.class)
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ResponseEntity<ApiError> handleInvalidPathException(InvalidPathException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "Invalid file path.";
-//        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
+    @ExceptionHandler(InvalidPathException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleInvalidPathException(InvalidPathException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "Invalid file path";
+        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
 
-//    @ExceptionHandler(MaxUploadSizeExceededException.class)
-//    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
-//    public ResponseEntity<ApiError> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "The maximum allowed file size for upload is " + maxFileSize + ".";
-//        ApiError apiError = new ApiError(PAYLOAD_TOO_LARGE, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    public ResponseEntity<ApiError> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "The maximum allowed file size for upload is " + maxFileSize;
+        ApiError apiError = new ApiError(PAYLOAD_TOO_LARGE, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
 
-//    @ExceptionHandler(StorageException.class)
-//    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-//    public ResponseEntity<ApiError> handleStorageException(StorageException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "Error while storing file.";
-//        ApiError apiError = new ApiError(INTERNAL_SERVER_ERROR, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
+    @ExceptionHandler(StorageException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ResponseEntity<ApiError> handleStorageException(StorageException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "Error while storing file";
+        ApiError apiError = new ApiError(INTERNAL_SERVER_ERROR, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
 
-//    @ExceptionHandler(UnsignedDocumentException.class)
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ResponseEntity<ApiError> handleUnsignedDocumentException(UnsignedDocumentException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "Requested document is not signed.";
-//        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
+    @ExceptionHandler(CustomFileNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ResponseEntity<ApiError> handleCustomFileNotFoundException(CustomFileNotFoundException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "File not found";
+        ApiError apiError = new ApiError(NOT_FOUND, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
 
-//    @ExceptionHandler(InvalidOTPException.class)
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ResponseEntity<ApiError> handleInvalidOTPException(InvalidOTPException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "Invalid or expired OTP.";
-//        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
+    @ExceptionHandler(InvalidOTPException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleInvalidOTPException(InvalidOTPException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "Invalid or expired OTP";
+        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
 
-//    @ExceptionHandler(InvalidStatusException.class)
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ResponseEntity<ApiError> handleInvalidStatusException(InvalidStatusException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "Invalid status: " + ex.getLocalizedMessage();
-//        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
+    @ExceptionHandler(InvalidStatusException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleInvalidStatusException(InvalidStatusException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "Invalid signing session status";
+        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
+
+
+    @ExceptionHandler(ConsentRequiredException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleConsentRequiredException(ConsentRequiredException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "Invalid consent";
+        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
+
+    @ExceptionHandler(SigningSessionSuspendedException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ResponseEntity<ApiError> handleSigningSessionSuspendedException(SigningSessionSuspendedException ex) {
+        logger.info(ex.getClass().getName());
+        String error = ex.getMessage();
+        ApiError apiError = new ApiError(CONFLICT, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
+
+    @ExceptionHandler(DocumentAlreadySignedException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ResponseEntity<ApiError> handleDocumentAlreadySignedException(DocumentAlreadySignedException ex) {
+        logger.info(ex.getClass().getName());
+        String error = "Already signed";
+        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
+        return new ResponseEntity<>(apiError, apiError.getStatus());
+    }
 
     // TODO https://auth0.com/blog/get-started-with-custom-error-handling-in-spring-boot-java/
-
-//    @ExceptionHandler(ConsentRequiredException.class)
-//    @ResponseStatus(HttpStatus.BAD_REQUEST)
-//    public ResponseEntity<ApiError> handleConsentRequiredException(ConsentRequiredException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = "Consent is required.";
-//        ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
-
-//    @ExceptionHandler(SigningSessionSuspendedException.class)
-//    @ResponseStatus(HttpStatus.CONFLICT)
-//    public ResponseEntity<ApiError> handleSigningSessionSuspendedException(SigningSessionSuspendedException ex) {
-//        logger.info(ex.getClass().getName());
-//        String error = ex.getMessage();
-//        ApiError apiError = new ApiError(CONFLICT, error, ex);
-//        return new ResponseEntity<>(apiError, apiError.getStatus());
-//    }
-
     //FIXME implement methods for:
     // - 401 unauthorized
     // - 403 forbidden

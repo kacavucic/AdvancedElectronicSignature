@@ -1,23 +1,25 @@
 package com.zrs.aes.service.signingSession;
 
+import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfReader;
+import com.itextpdf.signatures.SignatureUtil;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.Document;
+import com.zrs.aes.persistence.model.OneTimePassword;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.persistence.model.Status;
 import com.zrs.aes.persistence.repository.ISigningSessionRepository;
 import com.zrs.aes.service.email.IEmailService;
-import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
-import com.zrs.aes.service.location.HttpUtils;
 import com.zrs.aes.service.signing.SigningService;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.service.totp.TotpService;
-import com.zrs.aes.web.customexceptions.EntityNotFoundException;
-import com.zrs.aes.web.customexceptions.SigningSessionSuspendedException;
+import com.zrs.aes.web.customexceptions.*;
 import dev.samstevens.totp.time.SystemTimeProvider;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
+import org.springframework.core.io.Resource;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +27,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.mail.MessagingException;
 import javax.servlet.http.HttpServletRequest;
-import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -62,36 +62,6 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         return sha256hex;
     }
 
-    private static String getFileChecksum(MessageDigest digest, File file) throws IOException {
-        //Get file input stream for reading the file content
-        FileInputStream fis = new FileInputStream(file);
-
-        //Create byte array to read data in chunks
-        byte[] byteArray = new byte[1024];
-        int bytesCount = 0;
-
-        //Read file data and update in message digest
-        while ((bytesCount = fis.read(byteArray)) != -1) {
-            digest.update(byteArray, 0, bytesCount);
-        }
-        ;
-
-        //close the stream; We don't need it now.
-        fis.close();
-
-        //Get the hash's bytes
-        byte[] bytes = digest.digest();
-
-        //This bytes[] has bytes in decimal format;
-        //Convert it to hexadecimal format
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < bytes.length; i++) {
-            sb.append(Integer.toString((bytes[i] & 0xff) + 0x100, 16).substring(1));
-        }
-
-        //return complete hash
-        return sb.toString();
-    }
 
     @Override
     public SigningSession findById(UUID id) {
@@ -117,10 +87,18 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal) {
+    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws IOException {
 
         Path filePath = storageService.store(file);
         String fileName = filePath.getFileName().toString();
+
+
+        PdfDocument pdfDocument = new PdfDocument(new PdfReader(filePath.toString()));
+        SignatureUtil signUtil = new SignatureUtil(pdfDocument);
+        List<String> names = signUtil.getSignatureNames();
+        if (!names.isEmpty()) {
+            throw new DocumentAlreadySignedException("Document " + fileName + " is already signed");
+        }
 
         SigningSession signingSession = SigningSession.builder()
                 .userId(UUID.fromString(principal.getClaimAsString("sub")))
@@ -141,26 +119,40 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
     @Override
     public SigningSession cancelSigningSession(SigningSession signingSession) {
-        signingSession.setStatus(Status.CANCELED);
-        return save(signingSession);
-    }
+        if (signingSession.getStatus() != Status.PENDING && signingSession.getStatus() != Status.IN_PROGRESS) {
+            throw new InvalidStatusException(
+                    "Only signing sessions with status 'Pending' or 'In Progress' can be canceled.");
+        }
+        else {
+            signingSession.setStatus(Status.CANCELED);
+            return save(signingSession);
+        }
 
-    @Override
-    public SigningSession reviewSigningSession(SigningSession signingSession) {
-        signingSession.setStatus(Status.PENDING);
-        return save(signingSession);
     }
 
     @Override
     public SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Jwt principal)
             throws MessagingException {
 
-        signingSession.setConsent(consent);
-        signingSession.setOneTimePassword(totpService.getCodeObject());
+        if (signingSession.getStatus() != Status.PENDING) {
+            throw new InvalidStatusException(
+                    "Only signing sessions with status 'Pending' can be approved");
+        }
+
+        if (!consent) {
+            throw new ConsentRequiredException("Consent is required");
+        }
+
+        signingSession.setConsent(true);
+        OneTimePassword oneTimePassword = totpService.getCodeObject();
+        oneTimePassword.setSigningSession(signingSession);
+
+        signingSession.setOneTimePassword(oneTimePassword);
         signingSession.setStatus(Status.IN_PROGRESS);
         emailService.sendSigningEmail(principal, signingSession.getOneTimePassword().getOtp());
 
         return save(signingSession);
+
     }
 
     @Override
@@ -168,37 +160,42 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     public SigningSession resendOtp(SigningSession signingSession, Jwt principal)
             throws MessagingException {
 
+
+        if (signingSession.getStatus() != Status.IN_PROGRESS) {
+            throw new InvalidStatusException(
+                    "OTP can be resent only for signing sessions with status 'In Progress'");
+        }
+
         if (signingSession.getSuspendedUntil() != null) {
             long currentTimestamp = new SystemTimeProvider().getTime();
+
             if (currentTimestamp > signingSession.getSuspendedUntil()) {
                 return generateAndSendOtp(signingSession, 1, principal);
             }
-            else {
-                Instant instant = Instant.ofEpochSecond(signingSession.getSuspendedUntil());
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
-                        .withZone(ZoneId.systemDefault());
-                throw new SigningSessionSuspendedException(
-                        "Signing session is suspended until " + formatter.format(instant) +
-                                " due to exceeding the number of allowed attempts to resend OTP.");
-            }
+
+            Instant instant = Instant.ofEpochSecond(signingSession.getSuspendedUntil());
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
+                    .withZone(ZoneId.systemDefault());
+            throw new SigningSessionSuspendedException(
+                    "Signing session is suspended until " + formatter.format(instant) +
+                            " due to exceeding the number of allowed attempts to resend OTP");
         }
-        else {
-            if (signingSession.getOtpAttempts() == 3) {
-                long currentTimestamp = new SystemTimeProvider().getTime();
-                long plus30Minutes = currentTimestamp + TimeUnit.MINUTES.toSeconds(30);
-                signingSession.setSuspendedUntil(plus30Minutes);
-                save(signingSession);
-                Instant instant = Instant.ofEpochSecond(plus30Minutes);
-                DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
-                        .withZone(ZoneId.systemDefault());
-                throw new SigningSessionSuspendedException(
-                        "Signing session is suspended until " + formatter.format(instant) +
-                                " due to exceeding the number of allowed attempts to resend OTP.");
-            }
-            else {
-                return generateAndSendOtp(signingSession, signingSession.getOtpAttempts() + 1, principal);
-            }
+
+        if (signingSession.getOtpAttempts() == 3) {
+            long currentTimestamp = new SystemTimeProvider().getTime();
+            long plus30Minutes = currentTimestamp + TimeUnit.MINUTES.toSeconds(30);
+            signingSession.setSuspendedUntil(plus30Minutes);
+            save(signingSession);
+            Instant instant = Instant.ofEpochSecond(plus30Minutes);
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
+                    .withZone(ZoneId.systemDefault());
+            throw new SigningSessionSuspendedException(
+                    "Signing session is suspended until " + formatter.format(instant) +
+                            " due to exceeding the number of allowed attempts to resend OTP");
         }
+
+        return generateAndSendOtp(signingSession, signingSession.getOtpAttempts() + 1, principal);
+
     }
 
     @Override
@@ -216,7 +213,12 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts, Jwt principal)
             throws MessagingException {
 
-        signingSession.setOneTimePassword(totpService.getCodeObject());
+        OneTimePassword newOneTimePassword = totpService.getCodeObject();
+
+        signingSession.getOneTimePassword().setOtp(newOneTimePassword.getOtp());
+        signingSession.getOneTimePassword().setTimestamp(newOneTimePassword.getTimestamp());
+        signingSession.getOneTimePassword().setSecret(newOneTimePassword.getSecret());
+
         signingSession.setOtpAttempts(otpAttempts);
         signingSession.setSuspendedUntil(null);
 
@@ -225,46 +227,69 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public String sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
-            throws IOException, GeoIp2Exception, GeneralSecurityException {
+    @Transactional(noRollbackFor = {InvalidStatusException.class, InvalidOTPException.class})
+    public SigningSession sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
+            throws IOException, GeneralSecurityException, GeoIp2Exception {
 
-        Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
+        if (signingSession.getStatus() == Status.REJECTED) {
+            throw new InvalidStatusException(
+                    "Your signing session has been rejected due to entering invalid or expired OTP 3 times");
+        }
 
-        GeoIP geoIP;
-        String clientIp = HttpUtils.getRequestIPAddress(request);
-        if (clientIp.equals("0:0:0:0:0:0:0:1") || clientIp.equals("127.0.0.1")) {
-            geoIP = locationService.getLocation("87.116.160.153");
+        if (signingSession.getStatus() != Status.IN_PROGRESS) {
+            throw new InvalidStatusException(
+                    "Document can be signed only for signing sessions with status 'In Progress'");
+        }
+
+        if (signingSession.getSuspendedUntil() != null) {
+            Instant instant = Instant.ofEpochSecond(signingSession.getSuspendedUntil());
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PATTERN_FORMAT)
+                    .withZone(ZoneId.systemDefault());
+            throw new SigningSessionSuspendedException(
+                    "Signing session is suspended until " + formatter.format(instant) +
+                            " due to exceeding the number of allowed attempts to resend OTP");
+        }
+
+        if (signingSession.getSignAttempts() == 3) {
+            rejectSigning(signingSession);
+            throw new InvalidStatusException(
+                    "Your signing session has been rejected due to entering invalid or expired OTP 3 times");
         }
         else {
-            geoIP = locationService.getLocation(clientIp);
+            boolean codeVerified =
+                    totpService.verifyCode(signingSession.getOneTimePassword().getSecret(), otp);
+            if (!codeVerified) {
+                addSigningAttempt(signingSession);
+                throw new InvalidOTPException("Invalid or expired OTP");
+            }
+            else {
+                Path signedFilePath = signingService.sign(signingSession, request, principal);
+
+                signingSession.setStatus(Status.SIGNED);
+                signingSession.getDocument().setSignedFilePath(signedFilePath.toAbsolutePath().toString());
+                signingSession.getDocument().setSignedFileName(signedFilePath.getFileName().toString());
+
+                return save(signingSession);
+            }
         }
-        String location = geoIP.getCity() + ", " + geoIP.getCountry();
+    }
 
-        File fileToBeSigned = new File(signingSession.getDocument().getFilePath());
-//        HashCode hash = Files.hash(fileToBeSigned, Hashing.md5());
-        MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
-        String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
+    @Override
+    public Resource getUnsignedDocument(SigningSession signingSession) {
+        if (signingSession.getStatus() != Status.SIGNED) {
+            return storageService.loadAsResource(signingSession.getDocument().getFileName(), false);
+        }
+        throw new InvalidStatusException(
+                "Unsigned document can be downloaded only for signing sessions with status other than 'Signed'");
+    }
 
-
-        String reason = "On behalf of " + principal.getClaimAsString("given_name") + " " +
-                principal.getClaimAsString("family_name") + ", " + principal.getClaimAsString("email") + "\n"
-                + "Using OTP " + signingSession.getOneTimePassword().getOtp() + " and timestamp " +
-                signingSession.getOneTimePassword().getTimestamp() + "\n"
-                +
-                "Hash value of document: " + shaChecksum;
-
-        Path signedFilePath =
-                signingService.sign(fileToBeSignedPath, reason, location, principal.getClaimAsString("email"));
-        File signedFile = signedFilePath.toFile();
-
-        signingSession.setStatus(Status.SIGNED);
-        signingSession.getDocument().setSignedFilePath(signedFilePath.toAbsolutePath().toString());
-        signingSession.getDocument().setSignedFileName(signedFilePath.getFileName().toString());
-        save(signingSession);
-
-        return principal.getClaimAsString("given_name")
-                + ", document "
-                + fileToBeSignedPath.getFileName().toString()
-                + " has been successfully signed on your behalf!";
+    @Override
+    public Resource getSignedDocument(SigningSession signingSession) {
+        if (signingSession.getStatus() != Status.SIGNED) {
+            throw new InvalidStatusException(
+                    "Signed document can be downloaded only for signing sessions with status 'Signed'");
+        }
+        return storageService.loadAsResource(signingSession.getDocument().getSignedFileName(),
+                true);
     }
 }

@@ -1,5 +1,6 @@
 package com.zrs.aes.persistence.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.*;
 import org.hibernate.annotations.Type;
 
@@ -8,7 +9,6 @@ import java.util.UUID;
 
 @Getter
 @Setter
-@ToString
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -23,10 +23,12 @@ public class SigningSession {
 
     @OneToOne(cascade = CascadeType.ALL)
     @PrimaryKeyJoinColumn
+    @JsonIgnore
     private Document document;
 
     @OneToOne(cascade = CascadeType.ALL)
     @PrimaryKeyJoinColumn
+    @JsonIgnore
     private OneTimePassword oneTimePassword;
 
     @Column(nullable = false)
