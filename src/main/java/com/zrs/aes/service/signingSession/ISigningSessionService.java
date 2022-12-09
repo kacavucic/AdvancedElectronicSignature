@@ -11,6 +11,7 @@ import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -30,20 +31,20 @@ public interface ISigningSessionService {
 
     // logic
 
-    SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws IOException;
+    SigningSession initiateSigningSession(MultipartFile file, Map<String, Object> principalClaims) throws IOException;
 
     SigningSession cancelSigningSession(SigningSession signingSession);
 
-    SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Jwt principal)
+    SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Map<String, Object> principalClaims)
             throws MessagingException;
 
-    SigningSession resendOtp(SigningSession signingSession, Jwt principal) throws MessagingException;
+    SigningSession resendOtp(SigningSession signingSession, Map<String, Object> principalClaims) throws MessagingException;
 
     void addSigningAttempt(SigningSession signingSession);
 
     void rejectSigning(SigningSession signingSession);
 
-    SigningSession sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
+    SigningSession sign(SigningSession signingSession, String otp, String clientIp, Map<String, Object> principalClaims)
             throws IOException, GeneralSecurityException, GeoIp2Exception;
 
     Resource getUnsignedDocument(SigningSession signingSession);

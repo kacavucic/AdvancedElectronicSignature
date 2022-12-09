@@ -8,6 +8,9 @@ server:
 file:
   upload-dir: src/main/resources/static/uploadedDocuments
   download-dir: src/main/resources/static/signedDocuments
+sms:
+  TWILIO_ACCOUNT_SID: tbd
+  TWILIO_AUTH_TOKEN: tbd
 
 ####### resource server configuration properties
 spring:
@@ -19,6 +22,8 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+        format_sql: true
+    show-sql: true
   datasource:
     username: tbd
     password: tbd

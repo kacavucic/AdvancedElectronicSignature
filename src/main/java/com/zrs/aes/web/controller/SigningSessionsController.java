@@ -7,7 +7,9 @@ import com.zrs.aes.request.ApproveSigningSessionRequest;
 import com.zrs.aes.request.SignRequest;
 import com.zrs.aes.response.SigningSessionResponse;
 import com.zrs.aes.response.SigningSessionsResponse;
+import com.zrs.aes.service.location.HttpUtils;
 import com.zrs.aes.service.signingSession.ISigningSessionService;
+import com.zrs.aes.service.sms.ISmsService;
 import com.zrs.aes.web.error.ApiError;
 import com.zrs.aes.web.mapper.Mapper;
 import com.zrs.aes.web.validation.FileConstraint;
@@ -36,6 +38,7 @@ import javax.validation.Valid;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 
@@ -43,9 +46,10 @@ import java.util.UUID;
 @RequestMapping("signingSessions")
 @AllArgsConstructor
 @Validated
-public class SigningSessions {
+public class SigningSessionsController {
 
     private ISigningSessionService signingSessionService;
+    private ISmsService smsService;
     private Mapper mapper;
 
     @Operation(summary = "Initiates signing session",
@@ -66,7 +70,8 @@ public class SigningSessions {
             @RequestBody(description = "PDF document to be signed")
             @RequestParam(name = "document") @FileConstraint MultipartFile file,
             @AuthenticationPrincipal Jwt principal) throws IOException {
-        SigningSession initiatedSigningSession = signingSessionService.initiateSigningSession(file, principal);
+        Map<String, Object> principalClaims = principal.getClaims();
+        SigningSession initiatedSigningSession = signingSessionService.initiateSigningSession(file, principalClaims);
         return new ResponseEntity<>(mapper.toSigningSessionResponse(initiatedSigningSession), HttpStatus.CREATED);
     }
 
@@ -126,8 +131,9 @@ public class SigningSessions {
             @AuthenticationPrincipal Jwt principal)
             throws MessagingException {
         SigningSession signingSession = signingSessionService.findById(signingSessionId);
+        Map<String, Object> principalClaims = principal.getClaims();
         SigningSession approvedSigningSession =
-                signingSessionService.approveSigningSession(signingSession, request.getConsent(), principal);
+                signingSessionService.approveSigningSession(signingSession, request.getConsent(), principalClaims);
         return new ResponseEntity<>(mapper.toSigningSessionResponse(approvedSigningSession), HttpStatus.OK);
     }
 
@@ -158,9 +164,10 @@ public class SigningSessions {
             @AuthenticationPrincipal Jwt principal)
             throws MessagingException {
 
+        Map<String, Object> principalClaims = principal.getClaims();
         SigningSession signingSession = signingSessionService.findById(signingSessionId);
         SigningSession signingSessionWithResentOtp =
-                signingSessionService.resendOtp(signingSession, principal);
+                signingSessionService.resendOtp(signingSession, principalClaims);
         return new ResponseEntity<>(mapper.toSigningSessionResponse(signingSessionWithResentOtp), HttpStatus.OK);
     }
 
@@ -196,8 +203,10 @@ public class SigningSessions {
             throws GeneralSecurityException, IOException, GeoIp2Exception {
 
         SigningSession signingSession = signingSessionService.findById(signingSessionId);
+        Map<String, Object> principalClaims = principal.getClaims();
+        String clientIp = HttpUtils.getRequestIPAddress(httpServletRequest);
         SigningSession signedSigningSession =
-                signingSessionService.sign(signingSession, signRequest.getOtp(), httpServletRequest, principal);
+                signingSessionService.sign(signingSession, signRequest.getOtp(), clientIp, principalClaims);
         return new ResponseEntity<>(mapper.toSigningSessionResponse(signedSigningSession), HttpStatus.OK);
     }
 

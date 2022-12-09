@@ -2,7 +2,6 @@ package com.zrs.aes.service.signing;
 
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfReader;
-import com.itextpdf.signatures.PdfPKCS7;
 import com.itextpdf.signatures.PdfSignature;
 import com.itextpdf.signatures.SignatureUtil;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
@@ -10,40 +9,49 @@ import com.zrs.aes.persistence.model.Document;
 import com.zrs.aes.persistence.model.OneTimePassword;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.persistence.model.Status;
+import com.zrs.aes.persistence.repository.ISigningSessionRepository;
+import com.zrs.aes.service.email.EmailServiceImpl;
+import com.zrs.aes.service.email.IEmailService;
 import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
+import com.zrs.aes.service.signingSession.SigningSessionServiceImpl;
+import com.zrs.aes.service.sms.ISmsService;
 import com.zrs.aes.service.storage.IStorageService;
+import com.zrs.aes.service.totp.TotpService;
 import dev.samstevens.totp.time.SystemTimeProvider;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
+import org.thymeleaf.ITemplateEngine;
 
+import javax.mail.MessagingException;
+import javax.mail.internet.MimeMessage;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
-import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
-
 import static org.mockito.Mockito.*;
 
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(initializers = ConfigDataApplicationContextInitializer.class)
 @EnableConfigurationProperties(value = SigningProperties.class)
 @ActiveProfiles("local")
-public class SigningServiceIntegrityTest {
-
+public class IrrefutabilityTest {
     private final String givenName = "Katarina";
     private final String familyName = "Vucic";
     private final String signatureFieldName = "Advanced Electronic Signature";
@@ -55,7 +63,6 @@ public class SigningServiceIntegrityTest {
             Using OTP 123456 and timestamp 1668872875
             Hash value of document: c92376579219dfdf9241c7eb35298388014906667757348a91540f1391d2b757""";
     // TODO Sredi hash i odakle se cita
-    private final String location = "Belgrade, Serbia";
     private final String contact = "kattylicious98@gmail.com";
     private final String clientIp = "192.168.0.55";
 
@@ -64,18 +71,25 @@ public class SigningServiceIntegrityTest {
     IStorageService storageService;
     @Mock
     GeoIPLocationService locationService;
+    @Mock
+    ISigningSessionRepository signingSessionRepository;
+    @Mock
+    IEmailService emailService;
+    @Mock
+    ISmsService smsService;
+    TotpService totpService = new TotpService();
     SigningService signingService;
     SignatureUtil util;
     PdfDocument pdfDocument;
+    SigningSession signingSession;
 
     @BeforeEach
-    void setUp() throws GeneralSecurityException, IOException, GeoIp2Exception {
+    void setUp() throws GeneralSecurityException, IOException, GeoIp2Exception, MessagingException {
         MockitoAnnotations.openMocks(this);
 
-        when(locationService.getLocation(anyString()))
-                .thenReturn(new GeoIP(clientIp, "Belgrade", "Serbia", "44", "22"));
-        when(storageService.load(anyString()))
-                .thenReturn(fileToBeSignedPath);
+        // ARRANGE
+
+        // Arrange globals
         signingProperties = new SigningProperties();
         signingProperties.setKeyPass("katarina");
         signingProperties.setStorePass("katarina");
@@ -86,19 +100,11 @@ public class SigningServiceIntegrityTest {
         principalClaims.put("family_name", familyName);
         principalClaims.put("sub", "d59d13ba-da98-47a5-b245-cd82698adfdd");
 
-        OneTimePassword oneTimePassword = OneTimePassword.builder()
-                .otp("123456")
-                .secret("samplesecret")
-                .id(UUID.fromString((String) principalClaims.get("sub")))
-                .timestamp(1668872875l)
-                .build();
-        SigningSession signingSession = SigningSession.builder()
+        signingSession = SigningSession.builder()
                 .userId(UUID.fromString((String) principalClaims.get("sub")))
-                .status(Status.IN_PROGRESS)
-                .consent(true)
-                .oneTimePassword(oneTimePassword)
+                .status(Status.PENDING)
                 .build();
-        oneTimePassword.setSigningSession(signingSession);
+
         Document document = Document.builder()
                 .signingSession(signingSession)
                 .filePath(fileToBeSignedPath.toAbsolutePath().toString())
@@ -108,11 +114,25 @@ public class SigningServiceIntegrityTest {
 
         signingSession.setDocument(document);
 
+        // Arrange Approve signing deps
+        SigningSessionServiceImpl signingSessionService = new SigningSessionServiceImpl(signingSessionRepository,
+                storageService, emailService, smsService, totpService, locationService, signingService);
+
+        when(signingSessionService.save(any(SigningSession.class))).thenAnswer(i -> i.getArguments()[0]);
+
+        // Arrange Signing deps
+        when(locationService.getLocation(anyString()))
+                .thenReturn(new GeoIP(clientIp, "Belgrade", "Serbia", "44", "22"));
+        when(storageService.load(anyString()))
+                .thenReturn(fileToBeSignedPath);
+
         // ACT
 
-        // sign document
-        Path outPdfPath = signingService.sign(signingSession, clientIp, principalClaims);
+        // Approve signing
+        signingSession = signingSessionService.approveSigningSession(signingSession, true, principalClaims);
 
+        // Sign document
+        Path outPdfPath = signingService.sign(signingSession, clientIp, principalClaims);
         // extract signature details
         pdfDocument = new PdfDocument(new PdfReader(outPdfPath.toString()));
         util = new SignatureUtil(pdfDocument);
@@ -120,6 +140,7 @@ public class SigningServiceIntegrityTest {
 
     @AfterEach
     void tearDown() {
+        // TODO Check this
         signingService = null;
         util = null;
 
@@ -129,60 +150,23 @@ public class SigningServiceIntegrityTest {
     }
 
     @Test
-    @DisplayName("Signature field existence")
-    void signatureField() {
-        // does signature field exist
-        assertTrue(util.doesSignatureFieldExist(signatureFieldName), "Signature field exists");
+    @DisplayName("Signing session fields updated during approval")
+    void sessionFieldsUpdated() {
+        assertNotNull(signingSession.getOneTimePassword(), "OneTimePassword created");
+        assertTrue(signingSession.getConsent(), "Consent for signing is given");
+        assertEquals(Status.IN_PROGRESS, signingSession.getStatus(), "Status is changed to IN PROGRESS");
     }
 
     @Test
-    @DisplayName("Signature existence")
-    void signature() {
-        // does signature exist
-        PdfPKCS7 signature = util.readSignatureData(signatureFieldName);
-        assertNotNull(signature, "Signature exists");
-    }
-
-    @Test
-    @DisplayName("Signature validity and data integrity")
-    void signatureValidityAndDataIntegrity() throws GeneralSecurityException {
-        // checks that signature is genuine and the document was not modified
-        PdfPKCS7 signature = util.readSignatureData(signatureFieldName);
-        boolean genuineAndWasNotModified = signature.verifySignatureIntegrityAndAuthenticity();
-        boolean completeDocumentIsSigned = util.signatureCoversWholeDocument(signatureFieldName);
-
-        // TODO Condition 'signature != null' is always 'true'
-        Assumptions.assumingThat(signature != null,
-                () -> {
-                    assertTrue(genuineAndWasNotModified, "Signature integrity and authenticity is verified");
-                    assertTrue(completeDocumentIsSigned, "Signature covers whole document");
-                });
-    }
-
-    @Test
-    @DisplayName("Signature data integrity - manual")
-    void signatureDataIntegrityManual()
-            throws NoSuchFieldException, IllegalAccessException, NoSuchAlgorithmException, IOException {
-        System.out.println(signatureFieldName);
-        PdfPKCS7 signature = util.readSignatureData(signatureFieldName);
-        System.out.println("    Digest algorithm: " + signature.getHashAlgorithm());
-        Field digestAttrField = PdfPKCS7.class.getDeclaredField("digestAttr");
-        digestAttrField.setAccessible(true);
-        byte[] digestAttr = (byte[]) digestAttrField.get(signature);
-        System.out.println(digestAttr);
-    }
-
-    @Test
-    @DisplayName("Signature field values match")
-    void fieldsMatch() {
+    @DisplayName("Signed and approved document fields correspond")
+    void testSignedDocumentFieldsAndApproved() {
         // test fields
         PdfSignature sig = util.getSignature(signatureFieldName);
-        assertEquals(sig.getReason(), reason, "Reason in the signature is valid");
-        assertEquals(sig.getLocation(), location, "Location in the signature is valid");
-
-        // test certificate details
-        String certSubject =
-                util.readSignatureData(signatureFieldName).getSigningCertificate().getSubjectX500Principal().getName();
-        assertEquals(certSubject, certSubjectName, "Certificate subject matches");
+        assertNotNull(sig.getReason(), "Reason is not null");
+        assertTrue(sig.getReason().contains("On behalf of Katarina Vucic"), "Reason contains valid signer name");
+        OneTimePassword otpCode = totpService
+                .getCodeObject(signingSession.getOneTimePassword().getTimestamp(),
+                        signingSession.getOneTimePassword().getSecret());
+        assertTrue(sig.getReason().contains("Using OTP " + otpCode.getOtp()), "Reason contains valid OTP code");
     }
 }

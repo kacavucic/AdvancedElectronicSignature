@@ -11,6 +11,7 @@ import org.thymeleaf.context.Context;
 
 import javax.mail.MessagingException;
 import javax.mail.internet.MimeMessage;
+import java.util.Map;
 
 @AllArgsConstructor
 @Service
@@ -41,11 +42,11 @@ public class EmailServiceImpl implements IEmailService {
     }
 
     @Override
-    public void sendSigningEmail(@AuthenticationPrincipal Jwt principal, String code)
+    public void sendSigningEmail(Map<String, Object> principalClaims, String code)
             throws MessagingException {
 
         Context context = new Context();
-        context.setVariable("user_first_name", principal.getClaimAsString("given_name"));
+        context.setVariable("user_first_name", principalClaims.get("given_name"));
         context.setVariable("code", code);
 
         String htmlBody = thymeleafTemplateEngine.process("signingEmail.html", context);
@@ -53,7 +54,7 @@ public class EmailServiceImpl implements IEmailService {
         MimeMessage message = emailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
         helper.setFrom(NOREPLY_ADDRESS);
-        helper.setTo(principal.getClaimAsString("email"));
+        helper.setTo((String)principalClaims.get("email"));
         helper.setSubject("[AES] Verify Document Signing");
         helper.setText(htmlBody, true);
         //helper.addInline("attachment.png", resourceFile);

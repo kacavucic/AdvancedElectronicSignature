@@ -24,10 +24,14 @@ public class TotpService {
     }
 
     public OneTimePassword getCodeObject() {
+        long timestamp = new SystemTimeProvider().getTime();
+        String secret = UUID.randomUUID().toString();
+        return getCodeObject(timestamp, secret);
+    }
+
+    public OneTimePassword getCodeObject(long timestamp, String secret) {
         try {
-            String secret = UUID.randomUUID().toString();
-            long currentBucket = Math.floorDiv(new SystemTimeProvider().getTime(), 30);
-            long timestamp = new SystemTimeProvider().getTime();
+            long currentBucket = Math.floorDiv(timestamp, 30);
             String code = codeGenerator.generate(secret, currentBucket);
 
             return OneTimePassword.builder()

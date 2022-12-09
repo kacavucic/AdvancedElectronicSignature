@@ -1,6 +1,7 @@
 package com.zrs.aes;
 
 import com.zrs.aes.service.signing.SigningProperties;
+import com.zrs.aes.service.sms.SmsProperties;
 import com.zrs.aes.service.storage.StorageProperties;
 import io.swagger.v3.oas.annotations.OpenAPIDefinition;
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType;
@@ -16,7 +17,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties({StorageProperties.class, SigningProperties.class})
+@EnableConfigurationProperties({StorageProperties.class, SigningProperties.class, SmsProperties.class})
 @OpenAPIDefinition(info = @Info(title = "Advanced Electronic Signature API",
         description = "REST API for signing documents with advanced electronic signature", version = "1.0.0",
         contact = @Contact(name = "Katarina Vučić", email = "vucic.kat@gmail.com")),

@@ -23,6 +23,7 @@ import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.Enumeration;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -43,6 +44,8 @@ public class SigningService {
         this.storageService = storageService;
         this.locationService = locationService;
     }
+
+    // TODO Consent na sign
 
     private static String getFileChecksum(MessageDigest digest, File file) throws IOException {
         //Get file input stream for reading the file content
@@ -75,14 +78,14 @@ public class SigningService {
         return sb.toString();
     }
 
-    public Path sign(SigningSession signingSession, HttpServletRequest request, Jwt principal)
+    public Path sign(SigningSession signingSession, String clientIp, Map<String, Object> principalClaims)
             throws IOException, GeneralSecurityException, GeoIp2Exception {
 
         Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
 
-        String reason = prepareReason(signingSession, principal);
-        String location = prepareLocation(request);
-        String contact = principal.getClaimAsString("email");
+        String reason = prepareReason(signingSession, principalClaims);
+        String location = prepareLocation(clientIp);
+        String contact = (String) principalClaims.get("email");
 
         ///////////////////////////////////////////////////
         File file = new File(BASE_DEST);
@@ -131,9 +134,8 @@ public class SigningService {
         return finalDestPath;
     }
 
-    private String prepareLocation(HttpServletRequest request) throws IOException, GeoIp2Exception {
+    private String prepareLocation(String clientIp) throws IOException, GeoIp2Exception {
         GeoIP geoIP;
-        String clientIp = HttpUtils.getRequestIPAddress(request);
         if (clientIp.equals("0:0:0:0:0:0:0:1") || clientIp.equals("127.0.0.1")) {
             geoIP = locationService.getLocation("87.116.160.153");
         }
@@ -143,18 +145,19 @@ public class SigningService {
         return geoIP.getCity() + ", " + geoIP.getCountry();
     }
 
-    private String prepareReason(SigningSession signingSession, Jwt principal)
+    private String prepareReason(SigningSession signingSession, Map<String, Object> principalClaims)
             throws IOException, NoSuchAlgorithmException {
         File fileToBeSigned = new File(signingSession.getDocument().getFilePath());
 //        HashCode hash = Files.hash(fileToBeSigned, Hashing.md5());
         MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
         String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
 
-        return "On behalf of " + principal.getClaimAsString("given_name") + " " +
-                principal.getClaimAsString("family_name") + ", " + principal.getClaimAsString("email") + "\n"
+        String reason = "On behalf of " + principalClaims.get("given_name") + " " +
+                principalClaims.get("family_name") + ", " + principalClaims.get("email") + "\n"
                 + "Using OTP " + signingSession.getOneTimePassword().getOtp() + " and timestamp " +
                 signingSession.getOneTimePassword().getTimestamp() + "\n"
                 +
                 "Hash value of document: " + shaChecksum;
+        return reason;
     }
 }

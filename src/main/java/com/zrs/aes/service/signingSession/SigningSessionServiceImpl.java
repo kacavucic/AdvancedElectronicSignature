@@ -12,6 +12,7 @@ import com.zrs.aes.persistence.repository.ISigningSessionRepository;
 import com.zrs.aes.service.email.IEmailService;
 import com.zrs.aes.service.location.GeoIPLocationService;
 import com.zrs.aes.service.signing.SigningService;
+import com.zrs.aes.service.sms.ISmsService;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.service.totp.TotpService;
 import com.zrs.aes.web.customexceptions.*;
@@ -20,13 +21,11 @@ import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
 import org.springframework.core.io.Resource;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.mail.MessagingException;
-import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -37,6 +36,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -51,6 +51,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     private final ISigningSessionRepository signingSessionRepository;
     private IStorageService storageService;
     private IEmailService emailService;
+    private ISmsService smsService;
     private TotpService totpService;
     private GeoIPLocationService locationService;
     private SigningService signingService;
@@ -87,7 +88,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession initiateSigningSession(MultipartFile file, Jwt principal) throws IOException {
+    public SigningSession initiateSigningSession(MultipartFile file, Map<String, Object> principalClaims)
+            throws IOException {
 
         Path filePath = storageService.store(file);
         String fileName = filePath.getFileName().toString();
@@ -101,7 +103,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         }
 
         SigningSession signingSession = SigningSession.builder()
-                .userId(UUID.fromString(principal.getClaimAsString("sub")))
+                .userId(UUID.fromString((String) principalClaims.get("sub")))
                 .status(Status.PENDING)
                 .build();
 
@@ -131,7 +133,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Jwt principal)
+    public SigningSession approveSigningSession(SigningSession signingSession, Boolean consent,
+                                                Map<String, Object> principalClaims)
             throws MessagingException {
 
         if (signingSession.getStatus() != Status.PENDING) {
@@ -149,15 +152,15 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
         signingSession.setOneTimePassword(oneTimePassword);
         signingSession.setStatus(Status.IN_PROGRESS);
-        emailService.sendSigningEmail(principal, signingSession.getOneTimePassword().getOtp());
+        smsService.sendSigningSms(principalClaims, oneTimePassword.getOtp());
+        emailService.sendSigningEmail(principalClaims, oneTimePassword.getOtp());
 
         return save(signingSession);
-
     }
 
     @Override
     @Transactional(noRollbackFor = SigningSessionSuspendedException.class)
-    public SigningSession resendOtp(SigningSession signingSession, Jwt principal)
+    public SigningSession resendOtp(SigningSession signingSession, Map<String, Object> principalClaims)
             throws MessagingException {
 
 
@@ -170,7 +173,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
             long currentTimestamp = new SystemTimeProvider().getTime();
 
             if (currentTimestamp > signingSession.getSuspendedUntil()) {
-                return generateAndSendOtp(signingSession, 1, principal);
+                return generateAndSendOtp(signingSession, 1, principalClaims);
             }
 
             Instant instant = Instant.ofEpochSecond(signingSession.getSuspendedUntil());
@@ -194,7 +197,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                             " due to exceeding the number of allowed attempts to resend OTP");
         }
 
-        return generateAndSendOtp(signingSession, signingSession.getOtpAttempts() + 1, principal);
+        return generateAndSendOtp(signingSession, signingSession.getOtpAttempts() + 1, principalClaims);
 
     }
 
@@ -210,7 +213,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         save(signingSession);
     }
 
-    private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts, Jwt principal)
+    private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts,
+                                              Map<String, Object> principalClaims)
             throws MessagingException {
 
         OneTimePassword newOneTimePassword = totpService.getCodeObject();
@@ -222,15 +226,29 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         signingSession.setOtpAttempts(otpAttempts);
         signingSession.setSuspendedUntil(null);
 
-        emailService.sendSigningEmail(principal, signingSession.getOneTimePassword().getOtp());
+        smsService.sendSigningSms(principalClaims, signingSession.getOneTimePassword().getOtp());
+        emailService.sendSigningEmail(principalClaims, signingSession.getOneTimePassword().getOtp());
         return save(signingSession);
     }
 
     @Override
     @Transactional(noRollbackFor = {InvalidStatusException.class, InvalidOTPException.class})
-    public SigningSession sign(SigningSession signingSession, String otp, HttpServletRequest request, Jwt principal)
+    public SigningSession sign(SigningSession signingSession, String otp, String clientIp,
+                               Map<String, Object> principalClaims)
             throws IOException, GeneralSecurityException, GeoIp2Exception {
 
+        /* TODO Proveri user id iz sesije sa SUB claim-om iz tokena
+         * Kako se ovo gore moze zloupotrebiti:
+         * User A zapocne sesiju i dodje do potpisivanja
+         * User B se autentikuje i (nekako) ukrade podatke o sesiji usera A ali ne ukrade tokne
+         * User B proba sa svojim tokenom da potpise sesiju korisnika A
+         * Sistem ga zbog provere u gornjem t-o-d-o odbija
+         */
+        if (!signingSession.getUserId().toString().equals(principalClaims.get("sub"))) {
+            // TODO Napravi novi Exception koji odgovara ovoj proveri
+            throw new InvalidStatusException(
+                    "Provided session does not belong to current user (caller)");
+        }
         if (signingSession.getStatus() == Status.REJECTED) {
             throw new InvalidStatusException(
                     "Your signing session has been rejected due to entering invalid or expired OTP 3 times");
@@ -263,7 +281,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                 throw new InvalidOTPException("Invalid or expired OTP");
             }
             else {
-                Path signedFilePath = signingService.sign(signingSession, request, principal);
+                Path signedFilePath = signingService.sign(signingSession, clientIp, principalClaims);
 
                 signingSession.setStatus(Status.SIGNED);
                 signingSession.getDocument().setSignedFilePath(signedFilePath.toAbsolutePath().toString());

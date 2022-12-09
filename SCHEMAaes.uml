@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Diagram>
+  <ID>DATABASE</ID>
+  <OriginalElement>c1cf97b7-31f8-46bd-b78e-de2433b0f695.SCHEMA:aes</OriginalElement>
+  <nodes>
+    <node x="320.5" y="-234.5">c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.signing_session</node>
+    <node x="-147.0" y="-161.5">c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.one_time_password</node>
+    <node x="-147.0" y="-368.5">c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.document</node>
+  </nodes>
+  <notes />
+  <edges>
+    <edge source="c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.one_time_password" target="c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.signing_session" relationship="REFERENCES">
+      <point x="102.0" y="7.25" />
+      <point x="-79.5" y="47.25" />
+    </edge>
+    <edge source="c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.document" target="c1cf97b7-31f8-46bd-b78e-de2433b0f695.TABLE:aes.signing_session" relationship="REFERENCES">
+      <point x="102.0" y="0.0" />
+      <point x="260.0" y="-285.0" />
+      <point x="260.0" y="-187.25" />
+      <point x="-79.5" y="-47.25" />
+    </edge>
+  </edges>
+  <settings layout="Hierarchic Compact" zoom="1.0" showDependencies="false" x="249.0" y="-201.0" />
+  <SelectedNodes />
+  <Categories>
+    <Category>Columns</Category>
+    <Category>Comments</Category>
+    <Category>Key columns</Category>
+    <Category>Virtual foreign keys</Category>
+  </Categories>
+</Diagram>
+
