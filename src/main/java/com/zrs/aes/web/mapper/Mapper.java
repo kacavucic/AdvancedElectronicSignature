@@ -30,7 +30,7 @@ public class Mapper {
         SigningSessionResponse signingSessionResponse = SigningSessionResponse.builder()
                 .id(signingSession.getId())
                 .userId(signingSession.getUserId())
-                .otpAttempts(signingSession.getOtpAttempts())
+                .resendAttempts(signingSession.getResendAttempts())
                 .signAttempts(signingSession.getSignAttempts())
                 .suspendedUntil(signingSession.getSuspendedUntil())
                 .consent(signingSession.getConsent())
@@ -40,7 +40,7 @@ public class Mapper {
         DocumentResponse documentResponse = DocumentResponse.builder()
                 .id(signingSession.getDocument().getId())
                 .fileName(signingSession.getDocument().getFileName())
-                .addedOn(signingSession.getDocument().getAddedOn())
+                .addedOn(signingSession.getDocument().getAddedAt())
                 .signedFileName(signingSession.getDocument().getSignedFileName())
                 .build();
 

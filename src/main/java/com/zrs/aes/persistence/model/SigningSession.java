@@ -29,14 +29,14 @@ public class SigningSession {
     @OneToOne(cascade = CascadeType.ALL)
     @PrimaryKeyJoinColumn
     @JsonIgnore
-    private OneTimePassword oneTimePassword;
+    private Certificate certificate;
 
     @Column(nullable = false)
     @Type(type = "uuid-char")
     private UUID userId;
 
     @Column(columnDefinition = "integer default 0")
-    private int otpAttempts;
+    private int resendAttempts;
 
     @Column(columnDefinition = "integer default 0")
     private int signAttempts;

@@ -26,7 +26,7 @@ public class SmsServiceImpl implements ISmsService {
         String phoneNumber = (String) principalClaims.get("mobile");
         String firstName = (String) principalClaims.get("given_name");
         String message =
-                firstName + ", your OTP code for document signing is " + code + " and is valid for 30 seconds.";
+                firstName + ", your code for document signing is " + code;
 
         Message.creator(new PhoneNumber(phoneNumber),
                 new PhoneNumber("+16294682658"), message).create();

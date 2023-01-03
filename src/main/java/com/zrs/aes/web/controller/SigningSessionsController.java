@@ -1,7 +1,6 @@
 package com.zrs.aes.web.controller;
 
 
-import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.request.ApproveSigningSessionRequest;
 import com.zrs.aes.request.SignRequest;
@@ -20,6 +19,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -36,7 +36,11 @@ import javax.mail.MessagingException;
 import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 import java.io.IOException;
-import java.security.GeneralSecurityException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -46,6 +50,7 @@ import java.util.UUID;
 @RequestMapping("signingSessions")
 @AllArgsConstructor
 @Validated
+@Tag(name = "signing-sessions")
 public class SigningSessionsController {
 
     private ISigningSessionService signingSessionService;
@@ -103,7 +108,7 @@ public class SigningSessionsController {
     @Operation(summary = "Approves signing session",
             description = "Approves signing session by updating its field 'consent'" +
                     " which must be set to 'true' in order for approval to be successful." +
-                    " Upon successful approval OTP is generated and sent to authenticated user's email address" +
+                    " Upon successful approval code is generated and sent to authenticated user's email address" +
                     " and is later used as input for signing process." +
                     " Only signing sessions with status 'Pending' can be approved." +
                     " Once signing session is approved its status becomes 'In Progress'.")
@@ -129,46 +134,47 @@ public class SigningSessionsController {
             @org.springframework.web.bind.annotation.RequestBody
                     ApproveSigningSessionRequest request,
             @AuthenticationPrincipal Jwt principal)
-            throws MessagingException {
+            throws Exception {
+        request.setCertRequestedAt(Instant.now().getEpochSecond());
         SigningSession signingSession = signingSessionService.findById(signingSessionId);
         Map<String, Object> principalClaims = principal.getClaims();
         SigningSession approvedSigningSession =
-                signingSessionService.approveSigningSession(signingSession, request.getConsent(), principalClaims);
+                signingSessionService.approveSigningSession(signingSession, request, principalClaims);
         return new ResponseEntity<>(mapper.toSigningSessionResponse(approvedSigningSession), HttpStatus.OK);
     }
 
 
-    @Operation(summary = "Resends OTP associated with signing session",
+    @Operation(summary = "Resends code associated with signing session",
             description =
-                    "Generates new OTP, updates it for associated signing session and sends it to authenticated user's email address." +
-                            " If OTP becomes invalid due to inactivity," +
-                            " authenticated users are able to request for new OTP to be sent to their email address." +
-                            " The maximum allowed attempts to request for a new OTP per signing session is 3," +
+                    "Generates new code, updates it for associated signing session and sends it to authenticated user's email address." +
+                            " If code hasn't been successfully sent," +
+                            " authenticated users are able to request for new code to be sent to their email address." +
+                            " The maximum allowed attempts to request for a new code per signing session is 3," +
                             " after which signing session becomes suspended for half an hour." +
-                            " During suspension resending OTP and signing of a document is disabled." +
-                            " Only signing sessions with status 'In Progress' can have their OTP resent." +
-                            " Upon resending OTP status of signing session stays 'In Progress'.")
+                            " During suspension resending code and signing of a document is disabled." +
+                            " Only signing sessions with status 'In Progress' can have their code resent." +
+                            " Upon resending code status of signing session stays 'In Progress'.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "OTP resent"),
+            @ApiResponse(responseCode = "200", description = "Code resent"),
             @ApiResponse(responseCode = "405", description = "Method Not Allowed",
                     content = {@Content(schema = @Schema(implementation = ApiError.class))}),
             @ApiResponse(responseCode = "415", description = "Unsupported Media Type",
                     content = {@Content(schema = @Schema(implementation = ApiError.class))})})
     @CrossOrigin(origins = "http://localhost:3000")
-    @PutMapping(value = "{signingSessionId}/resendOtp",
+    @PutMapping(value = "{signingSessionId}/resendCode",
             produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.OK)
-    public ResponseEntity<SigningSessionResponse> resendOtp(
-            @Parameter(description = "ID of signing session associated with OTP to be resent") @PathVariable
+    public ResponseEntity<SigningSessionResponse> resendCode(
+            @Parameter(description = "ID of signing session associated with code to be resent") @PathVariable
                     UUID signingSessionId,
             @AuthenticationPrincipal Jwt principal)
-            throws MessagingException {
-
+            throws Exception {
+        Long certRequestedAt = Instant.now().getEpochSecond();
         Map<String, Object> principalClaims = principal.getClaims();
         SigningSession signingSession = signingSessionService.findById(signingSessionId);
-        SigningSession signingSessionWithResentOtp =
-                signingSessionService.resendOtp(signingSession, principalClaims);
-        return new ResponseEntity<>(mapper.toSigningSessionResponse(signingSessionWithResentOtp), HttpStatus.OK);
+        SigningSession signingSessionWithResentCode =
+                signingSessionService.resendCode(signingSession, principalClaims, certRequestedAt);
+        return new ResponseEntity<>(mapper.toSigningSessionResponse(signingSessionWithResentCode), HttpStatus.OK);
     }
 
 
@@ -177,8 +183,8 @@ public class SigningSessionsController {
     @Operation(summary = "Signs document associated with signing session",
             description = "Signs document associated with signing session" +
                     " and stores the signed document on server." +
-                    " Requires valid and non-expired OTP to be provided in order for signing process to be successful." +
-                    " The maximum allowed attempts to sign with invalid or expired OTP is 3 after which status of signing session becomes 'Rejected'" +
+                    " Requires valid code to be provided in order for signing process to be successful." +
+                    " The maximum allowed attempts to sign with invalid code is 3, after which status of signing session becomes 'Rejected'" +
                     " Only signing sessions with status 'In Progress' can have their document be signed." +
                     " Once document associated with signing session is signed its status becomes 'Signed'.")
     @ApiResponses(value = {
@@ -195,18 +201,18 @@ public class SigningSessionsController {
             @Parameter(description = "ID of signing session associated with document to be signed")
             @PathVariable UUID signingSessionId,
             @RequestBody(
-                    description = "Valid and non-expired OTP which was sent to authenticated user's email address upon approval of signing session")
+                    description = "Valid code which was sent to authenticated user's email address upon approval of signing session")
             @Valid @org.springframework.web.bind.annotation.RequestBody
                     SignRequest signRequest,
             @AuthenticationPrincipal Jwt principal,
             HttpServletRequest httpServletRequest)
-            throws GeneralSecurityException, IOException, GeoIp2Exception {
+            throws Exception {
 
         SigningSession signingSession = signingSessionService.findById(signingSessionId);
         Map<String, Object> principalClaims = principal.getClaims();
         String clientIp = HttpUtils.getRequestIPAddress(httpServletRequest);
         SigningSession signedSigningSession =
-                signingSessionService.sign(signingSession, signRequest.getOtp(), clientIp, principalClaims);
+                signingSessionService.sign(signingSession, signRequest.getCode(), clientIp, principalClaims);
         return new ResponseEntity<>(mapper.toSigningSessionResponse(signedSigningSession), HttpStatus.OK);
     }
 

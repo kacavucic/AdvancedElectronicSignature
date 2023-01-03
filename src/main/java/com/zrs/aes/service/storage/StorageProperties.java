@@ -12,4 +12,7 @@ public class StorageProperties {
     private String uploadDir;
     private String downloadDir;
 
+    private String uploadCertDir;
+    private String rootCertPath;
+
 }

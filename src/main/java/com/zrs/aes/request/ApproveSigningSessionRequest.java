@@ -17,4 +17,6 @@ public class ApproveSigningSessionRequest implements Serializable {
     @AssertTrue(message = "Consent is required")
     private Boolean consent;
 
+    private Long certRequestedAt;
+
 }

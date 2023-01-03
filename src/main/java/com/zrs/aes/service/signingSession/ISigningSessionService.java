@@ -1,15 +1,16 @@
 package com.zrs.aes.service.signingSession;
 
-import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
+import com.zrs.aes.request.ApproveSigningSessionRequest;
 import org.springframework.core.io.Resource;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.mail.MessagingException;
-import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
-import java.security.GeneralSecurityException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,17 +36,20 @@ public interface ISigningSessionService {
 
     SigningSession cancelSigningSession(SigningSession signingSession);
 
-    SigningSession approveSigningSession(SigningSession signingSession, Boolean consent, Map<String, Object> principalClaims)
-            throws MessagingException;
+    SigningSession approveSigningSession(SigningSession signingSession, ApproveSigningSessionRequest request,
+                                         Map<String, Object> principalClaims)
+            throws Exception;
 
-    SigningSession resendOtp(SigningSession signingSession, Map<String, Object> principalClaims) throws MessagingException;
+    SigningSession resendCode(SigningSession signingSession, Map<String, Object> principalClaims, Long certRequestedAt)
+            throws Exception;
 
     void addSigningAttempt(SigningSession signingSession);
 
     void rejectSigning(SigningSession signingSession);
 
-    SigningSession sign(SigningSession signingSession, String otp, String clientIp, Map<String, Object> principalClaims)
-            throws IOException, GeneralSecurityException, GeoIp2Exception;
+    SigningSession sign(SigningSession signingSession, String code, String clientIp,
+                        Map<String, Object> principalClaims)
+            throws Exception;
 
     Resource getUnsignedDocument(SigningSession signingSession);
 

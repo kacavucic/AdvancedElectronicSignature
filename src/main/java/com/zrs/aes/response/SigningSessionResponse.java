@@ -1,8 +1,6 @@
 package com.zrs.aes.response;
 
 
-import com.zrs.aes.persistence.model.Document;
-import com.zrs.aes.persistence.model.OneTimePassword;
 import com.zrs.aes.persistence.model.Status;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,7 +21,7 @@ public class SigningSessionResponse {
 
     private DocumentResponse document;
 
-    private int otpAttempts;
+    private int resendAttempts;
 
     private int signAttempts;
 

@@ -256,7 +256,7 @@ public class RestExceptionHandler extends ResponseEntityExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ResponseEntity<ApiError> handleStorageException(StorageException ex) {
         logger.info(ex.getClass().getName());
-        String error = "Error while storing file";
+        String error = "Storage error";
         ApiError apiError = new ApiError(INTERNAL_SERVER_ERROR, error, ex);
         return new ResponseEntity<>(apiError, apiError.getStatus());
     }
@@ -270,11 +270,11 @@ public class RestExceptionHandler extends ResponseEntityExceptionHandler {
         return new ResponseEntity<>(apiError, apiError.getStatus());
     }
 
-    @ExceptionHandler(InvalidOTPException.class)
+    @ExceptionHandler(InvalidKeystorePassException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ResponseEntity<ApiError> handleInvalidOTPException(InvalidOTPException ex) {
+    public ResponseEntity<ApiError> handleInvalidKeystorePassException(InvalidKeystorePassException ex) {
         logger.info(ex.getClass().getName());
-        String error = "Invalid or expired OTP";
+        String error = "Invalid code";
         ApiError apiError = new ApiError(BAD_REQUEST, error, ex);
         return new ResponseEntity<>(apiError, apiError.getStatus());
     }

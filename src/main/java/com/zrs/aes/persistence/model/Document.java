@@ -32,11 +32,14 @@ public class Document {
     private String fileName;
 
     @Column(nullable = false)
-    private Long addedOn;
+    private Long addedAt;
 
     @Column
     private String signedFilePath;
 
     @Column
     private String signedFileName;
+
+    @Column
+    private Long signedAt;
 }

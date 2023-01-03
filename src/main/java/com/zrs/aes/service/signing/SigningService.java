@@ -9,20 +9,19 @@ import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
-import com.zrs.aes.service.location.HttpUtils;
 import com.zrs.aes.service.storage.IStorageService;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 
-import javax.servlet.http.HttpServletRequest;
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.*;
 import java.security.cert.Certificate;
-import java.security.cert.X509Certificate;
-import java.util.Enumeration;
+import java.security.spec.X509EncodedKeySpec;
+import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 import java.util.UUID;
 
@@ -78,7 +77,8 @@ public class SigningService {
         return sb.toString();
     }
 
-    public Path sign(SigningSession signingSession, String clientIp, Map<String, Object> principalClaims)
+    public Path sign(SigningSession signingSession, String clientIp, Map<String, Object> principalClaims,
+                     String keystorePassword)
             throws IOException, GeneralSecurityException, GeoIp2Exception {
 
         Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
@@ -95,15 +95,27 @@ public class SigningService {
         Security.removeProvider(provider.getName());
         Security.addProvider(provider);
 
+        // TODO chain, usage, izgled potpisa, otp na 2fa i resent tamo
+
+        Path uploadedCert = storageService.loadCert(signingSession.getCertificate().getSerialNumber() + ".pfx");
         KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-        ks.load(new FileInputStream(STORE_PATH), STORE_PASS);
+        ks.load(Files.newInputStream(uploadedCert), keystorePassword.toCharArray());
+        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) ks.getEntry("issued-cert",
+                new KeyStore.PasswordProtection(keystorePassword.toCharArray()));
+        PrivateKey privateKey = privateKeyEntry.getPrivateKey();
+        PublicKey publicKey = ks.getCertificate("issued-cert").getPublicKey();
+        // Get the KeyFactory for the key's algorithm
+        KeyFactory keyFactory = KeyFactory.getInstance(publicKey.getAlgorithm());
 
-        Enumeration<String> aliases = ks.aliases();
-        String alias = aliases.nextElement();
+        // Get the X509EncodedKeySpec for the key
+        X509EncodedKeySpec keySpec = keyFactory.getKeySpec(publicKey, X509EncodedKeySpec.class);
 
-        PrivateKey pk = (PrivateKey) ks.getKey(alias, KEY_PASS);
-        Certificate[] chain = ks.getCertificateChain(alias);
-        X509Certificate signerCert = (X509Certificate) chain[0];
+        // Generate the PEM-formatted key
+        String pemFormattedPublicKey = "-----BEGIN PUBLIC KEY-----\n" +
+                Base64.getEncoder().encodeToString(keySpec.getEncoded()) +
+                "\n-----END PUBLIC KEY-----";
+
+        Certificate[] certificateChain = privateKeyEntry.getCertificateChain();
         ///////////////////////////////////////////////////
 
         Path finalDestPath =
@@ -119,17 +131,26 @@ public class SigningService {
         PdfDocument pdfDocument = new PdfDocument(new PdfReader(fileToBeSignedPath.toString()));
 
         PdfSignatureAppearance appearance = pdfSigner.getSignatureAppearance();
-        appearance.setPageRect(new Rectangle(293, 16, 303, 101));
+        Rectangle pageSize = pdfSigner.getDocument().getDefaultPageSize();
+        appearance.setPageRect(new Rectangle(pageSize.getLeft() + 36, pageSize.getBottom() + 36, 200, 100));
         appearance.setPageNumber(pdfDocument.getNumberOfPages());
         appearance.setRenderingMode(PdfSignatureAppearance.RenderingMode.DESCRIPTION);
+        appearance.setReasonCaption("");
         appearance.setReason(reason);
         appearance.setLocation(location);
         appearance.setContact(contact); // ???
         appearance.setSignatureCreator(provider.getName());
 
-        IExternalSignature signature = new PrivateKeySignature(pk, "SHA256", provider.getName());
+        IExternalSignature signature = new PrivateKeySignature(privateKey, "SHA256", provider.getName());
         IExternalDigest externalDigest = new BouncyCastleDigest();
-        pdfSigner.signDetached(externalDigest, signature, chain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
+        pdfSigner.signDetached(externalDigest, signature, certificateChain, null, null, null, 0,
+                PdfSigner.CryptoStandard.CADES);
+
+        signingSession.getDocument().setSignedAt(Instant.now().getEpochSecond());
+        signingSession.getCertificate().setPublicKey(pemFormattedPublicKey);
+
+        // dispose certificate
+        storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
 
         return finalDestPath;
     }
@@ -152,12 +173,13 @@ public class SigningService {
         MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
         String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
 
-        String reason = "On behalf of " + principalClaims.get("given_name") + " " +
-                principalClaims.get("family_name") + ", " + principalClaims.get("email") + "\n"
-                + "Using OTP " + signingSession.getOneTimePassword().getOtp() + " and timestamp " +
-                signingSession.getOneTimePassword().getTimestamp() + "\n"
-                +
-                "Hash value of document: " + shaChecksum;
+        String reason = "Email address: " + principalClaims.get("email") + "\n"
+                + "Phone number: " + principalClaims.get("mobile") + "\n"
+                + "Based on the signing session with ID:" + "\n"
+                + signingSession.getId() + "\n"
+                + "for which the user was issued a certificate with serial number: " + "\n"
+                + signingSession.getCertificate().getSerialNumber();
+
         return reason;
     }
 }

@@ -3,20 +3,18 @@ package com.zrs.aes.service.signingSession;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfReader;
 import com.itextpdf.signatures.SignatureUtil;
-import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.Document;
-import com.zrs.aes.persistence.model.OneTimePassword;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.persistence.model.Status;
 import com.zrs.aes.persistence.repository.ISigningSessionRepository;
+import com.zrs.aes.request.ApproveSigningSessionRequest;
+import com.zrs.aes.service.certificate.CertificateGenerationService;
 import com.zrs.aes.service.email.IEmailService;
 import com.zrs.aes.service.location.GeoIPLocationService;
 import com.zrs.aes.service.signing.SigningService;
 import com.zrs.aes.service.sms.ISmsService;
 import com.zrs.aes.service.storage.IStorageService;
-import com.zrs.aes.service.totp.TotpService;
 import com.zrs.aes.web.customexceptions.*;
-import dev.samstevens.totp.time.SystemTimeProvider;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.util.encoders.Hex;
@@ -29,9 +27,11 @@ import javax.mail.MessagingException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.GeneralSecurityException;
+import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -52,9 +52,9 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     private IStorageService storageService;
     private IEmailService emailService;
     private ISmsService smsService;
-    private TotpService totpService;
     private GeoIPLocationService locationService;
     private SigningService signingService;
+    private CertificateGenerationService certificateGenerationService;
 
     public static String HashWithBouncyCastle(final String originalString) throws NoSuchAlgorithmException {
         final MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -111,7 +111,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                 .signingSession(signingSession)
                 .filePath(filePath.toAbsolutePath().toString())
                 .fileName(fileName)
-                .addedOn(new SystemTimeProvider().getTime())
+                .addedAt(Instant.now().getEpochSecond())
                 .build();
 
         signingSession.setDocument(document);
@@ -133,9 +133,12 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
     }
 
     @Override
-    public SigningSession approveSigningSession(SigningSession signingSession, Boolean consent,
+    public SigningSession approveSigningSession(SigningSession signingSession, ApproveSigningSessionRequest request,
                                                 Map<String, Object> principalClaims)
-            throws MessagingException {
+            throws Exception {
+
+        Boolean consent = request.getConsent();
+        Long certRequestedAt = request.getCertRequestedAt();
 
         if (signingSession.getStatus() != Status.PENDING) {
             throw new InvalidStatusException(
@@ -147,33 +150,34 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         }
 
         signingSession.setConsent(true);
-        OneTimePassword oneTimePassword = totpService.getCodeObject();
-        oneTimePassword.setSigningSession(signingSession);
+        String keystorePassword =
+                certificateGenerationService.generateCertificate(principalClaims, signingSession, certRequestedAt);
 
-        signingSession.setOneTimePassword(oneTimePassword);
         signingSession.setStatus(Status.IN_PROGRESS);
-        smsService.sendSigningSms(principalClaims, oneTimePassword.getOtp());
-        emailService.sendSigningEmail(principalClaims, oneTimePassword.getOtp());
+
+        // smsService.sendSigningSms(principalClaims, keystorePassword);
+        emailService.sendSigningEmail(principalClaims, keystorePassword);
 
         return save(signingSession);
     }
 
     @Override
     @Transactional(noRollbackFor = SigningSessionSuspendedException.class)
-    public SigningSession resendOtp(SigningSession signingSession, Map<String, Object> principalClaims)
-            throws MessagingException {
+    public SigningSession resendCode(SigningSession signingSession, Map<String, Object> principalClaims,
+                                     Long certRequestedAt)
+            throws Exception {
 
 
         if (signingSession.getStatus() != Status.IN_PROGRESS) {
             throw new InvalidStatusException(
-                    "OTP can be resent only for signing sessions with status 'In Progress'");
+                    "Code can be resent only for signing sessions with status 'In Progress'");
         }
 
         if (signingSession.getSuspendedUntil() != null) {
-            long currentTimestamp = new SystemTimeProvider().getTime();
+            long currentTimestamp = Instant.now().getEpochSecond();
 
             if (currentTimestamp > signingSession.getSuspendedUntil()) {
-                return generateAndSendOtp(signingSession, 1, principalClaims);
+                return generateAndSendCode(signingSession, 1, principalClaims, certRequestedAt);
             }
 
             Instant instant = Instant.ofEpochSecond(signingSession.getSuspendedUntil());
@@ -181,11 +185,11 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                     .withZone(ZoneId.systemDefault());
             throw new SigningSessionSuspendedException(
                     "Signing session is suspended until " + formatter.format(instant) +
-                            " due to exceeding the number of allowed attempts to resend OTP");
+                            " due to exceeding the number of allowed attempts to resend code");
         }
 
-        if (signingSession.getOtpAttempts() == 3) {
-            long currentTimestamp = new SystemTimeProvider().getTime();
+        if (signingSession.getResendAttempts() == 3) {
+            long currentTimestamp = Instant.now().getEpochSecond();
             long plus30Minutes = currentTimestamp + TimeUnit.MINUTES.toSeconds(30);
             signingSession.setSuspendedUntil(plus30Minutes);
             save(signingSession);
@@ -194,10 +198,11 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                     .withZone(ZoneId.systemDefault());
             throw new SigningSessionSuspendedException(
                     "Signing session is suspended until " + formatter.format(instant) +
-                            " due to exceeding the number of allowed attempts to resend OTP");
+                            " due to exceeding the number of allowed attempts to resend code");
         }
 
-        return generateAndSendOtp(signingSession, signingSession.getOtpAttempts() + 1, principalClaims);
+        return generateAndSendCode(signingSession, signingSession.getResendAttempts() + 1, principalClaims,
+                certRequestedAt);
 
     }
 
@@ -213,29 +218,30 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         save(signingSession);
     }
 
-    private SigningSession generateAndSendOtp(SigningSession signingSession, int otpAttempts,
-                                              Map<String, Object> principalClaims)
-            throws MessagingException {
+    private SigningSession generateAndSendCode(SigningSession signingSession, int resendAttempts,
+                                               Map<String, Object> principalClaims, Long certRequestedAt)
+            throws Exception {
 
-        OneTimePassword newOneTimePassword = totpService.getCodeObject();
+        // delete previous certificate
+        storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
 
-        signingSession.getOneTimePassword().setOtp(newOneTimePassword.getOtp());
-        signingSession.getOneTimePassword().setTimestamp(newOneTimePassword.getTimestamp());
-        signingSession.getOneTimePassword().setSecret(newOneTimePassword.getSecret());
+        String keystorePassword =
+                certificateGenerationService.generateCertificate(principalClaims, signingSession, certRequestedAt);
 
-        signingSession.setOtpAttempts(otpAttempts);
+
+        signingSession.setResendAttempts(resendAttempts);
         signingSession.setSuspendedUntil(null);
 
-        smsService.sendSigningSms(principalClaims, signingSession.getOneTimePassword().getOtp());
-        emailService.sendSigningEmail(principalClaims, signingSession.getOneTimePassword().getOtp());
+        // smsService.sendSigningSms(principalClaims, keystorePassword);
+        emailService.sendSigningEmail(principalClaims, keystorePassword);
         return save(signingSession);
     }
 
     @Override
-    @Transactional(noRollbackFor = {InvalidStatusException.class, InvalidOTPException.class})
-    public SigningSession sign(SigningSession signingSession, String otp, String clientIp,
+    @Transactional(noRollbackFor = {InvalidStatusException.class, InvalidKeystorePassException.class})
+    public SigningSession sign(SigningSession signingSession, String keystorePassword, String clientIp,
                                Map<String, Object> principalClaims)
-            throws IOException, GeneralSecurityException, GeoIp2Exception {
+            throws Exception {
 
         /* TODO Proveri user id iz sesije sa SUB claim-om iz tokena
          * Kako se ovo gore moze zloupotrebiti:
@@ -251,7 +257,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         }
         if (signingSession.getStatus() == Status.REJECTED) {
             throw new InvalidStatusException(
-                    "Your signing session has been rejected due to entering invalid or expired OTP 3 times");
+                    "Your signing session has been rejected due to entering invalid code 3 times");
         }
 
         if (signingSession.getStatus() != Status.IN_PROGRESS) {
@@ -265,24 +271,23 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
                     .withZone(ZoneId.systemDefault());
             throw new SigningSessionSuspendedException(
                     "Signing session is suspended until " + formatter.format(instant) +
-                            " due to exceeding the number of allowed attempts to resend OTP");
+                            " due to exceeding the number of allowed attempts to resend code");
         }
 
         if (signingSession.getSignAttempts() == 3) {
             rejectSigning(signingSession);
             throw new InvalidStatusException(
-                    "Your signing session has been rejected due to entering invalid or expired OTP 3 times");
+                    "Your signing session has been rejected due to entering invalid code 3 times");
         }
         else {
-            boolean codeVerified =
-                    totpService.verifyCode(signingSession.getOneTimePassword().getSecret(), otp);
-            if (!codeVerified) {
+            boolean keystorePasswordVerified =
+                    certificateGenerationService.verifyKeystorePassword(signingSession, keystorePassword);
+            if (!keystorePasswordVerified) {
                 addSigningAttempt(signingSession);
-                throw new InvalidOTPException("Invalid or expired OTP");
+                throw new InvalidKeystorePassException("Invalid code");
             }
             else {
-                Path signedFilePath = signingService.sign(signingSession, clientIp, principalClaims);
-
+                Path signedFilePath = signingService.sign(signingSession, clientIp, principalClaims, keystorePassword);
                 signingSession.setStatus(Status.SIGNED);
                 signingSession.getDocument().setSignedFilePath(signedFilePath.toAbsolutePath().toString());
                 signingSession.getDocument().setSignedFileName(signedFilePath.getFileName().toString());
@@ -291,6 +296,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
             }
         }
     }
+
 
     @Override
     public Resource getUnsignedDocument(SigningSession signingSession) {
