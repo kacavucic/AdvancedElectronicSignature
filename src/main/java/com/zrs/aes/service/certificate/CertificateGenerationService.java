@@ -2,17 +2,14 @@ package com.zrs.aes.service.certificate;
 
 import com.zrs.aes.persistence.model.Certificate;
 import com.zrs.aes.persistence.model.SigningSession;
-import com.zrs.aes.service.email.IEmailService;
 import com.zrs.aes.service.signing.SigningProperties;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.web.customexceptions.CustomFileNotFoundException;
-import org.bouncycastle.asn1.ASN1Encodable;
-import org.bouncycastle.asn1.DERSequence;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.GeneralName;
 import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.cert.CertIOException;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
@@ -20,9 +17,13 @@ import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.operator.ContentSigner;
+import org.bouncycastle.operator.ContentVerifierProvider;
+import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import org.bouncycastle.operator.jcajce.JcaContentVerifierProviderBuilder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 import org.bouncycastle.pkcs.PKCS10CertificationRequestBuilder;
+import org.bouncycastle.pkcs.PKCSException;
 import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.util.StringUtils;
@@ -49,191 +50,71 @@ public class CertificateGenerationService {
     private static final String SIGNATURE_ALGORITHM = "SHA256withRSA";
     final String STORE_PASS;
     final char[] KEY_PASS;
+    X500Name rootCertSubject;
     private IStorageService storageService;
-    private IEmailService emailService;
+    private KeyStore keyStore;
+    private PrivateKey rootPrivateKey;
+    private X509Certificate rootCert;
 
-    public CertificateGenerationService(SigningProperties signingProperties, IStorageService storageService,
-                                        IEmailService emailService) {
+    // TODO dodaj 3 timestamp-a na signature appereance
+
+    public CertificateGenerationService(SigningProperties signingProperties, IStorageService storageService) {
         this.STORE_PASS = signingProperties.getStorePass();
         this.KEY_PASS = signingProperties.getKeyPass().toCharArray();
         this.storageService = storageService;
-        this.emailService = emailService;
     }
 
     private void generateRootCertificate() throws Exception {
-        // Add the BouncyCastle Provider
-//        Security.addProvider(new BouncyCastleProvider());
 
-        // Initialize a new KeyPair generator
+        // Initialize a new KeyPair generator and generate KeyPair
         KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(KEY_ALGORITHM, BC_PROVIDER);
         keyPairGenerator.initialize(2048);
+        KeyPair keyPair = keyPairGenerator.generateKeyPair();
 
-        // Setup start date to yesterday and end date for 1 year validity
-        Calendar calendar = Calendar.getInstance();
-        calendar.add(Calendar.DATE, -1);
-        Date startDate = calendar.getTime();
+        // Create subject
+        X500Name subject = new X500Name("CN=AES PKI Root CA");
 
-        calendar.add(Calendar.YEAR, 1);
-        Date endDate = calendar.getTime();
+        // Create random serial number
+        BigInteger serialNumber = new BigInteger(Long.toString(new SecureRandom().nextLong()));
 
-        // First step is to create a root certificate
-        // First Generate a KeyPair,
-        // then a random serial number
-        // then generate a certificate using the KeyPair
-        KeyPair rootKeyPair = keyPairGenerator.generateKeyPair();
-        BigInteger rootSerialNum = new BigInteger(Long.toString(new SecureRandom().nextLong()));
-
-        // Issued By and Issued To same for root certificate
-        X500Name rootCertIssuer = new X500Name("CN=AES PKI Root CA");
-        X500Name rootCertSubject = rootCertIssuer;
-        JcaContentSignerBuilder signerBuilder = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM);
-        signerBuilder.setProvider(BC_PROVIDER);
-        PrivateKey privateKey = rootKeyPair.getPrivate();
-        ContentSigner rootCertContentSigner = signerBuilder.build(privateKey);
-        X509v3CertificateBuilder rootCertBuilder =
-                new JcaX509v3CertificateBuilder(rootCertIssuer, rootSerialNum, startDate, endDate, rootCertSubject,
-                        rootKeyPair.getPublic());
-
-        // Add Extensions
-        // A BasicConstraint to mark root certificate as CA certificate
-        JcaX509ExtensionUtils rootCertExtUtils = new JcaX509ExtensionUtils();
-        rootCertBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
-        rootCertBuilder.addExtension(Extension.subjectKeyIdentifier, false,
-                rootCertExtUtils.createSubjectKeyIdentifier(rootKeyPair.getPublic()));
-
-        rootCertBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.cRLSign | KeyUsage.keyCertSign));
-
-
-        // Create a cert holder and export to X509Certificate
-        X509CertificateHolder rootCertHolder = rootCertBuilder.build(rootCertContentSigner);
-        X509Certificate rootCert =
-                new JcaX509CertificateConverter().setProvider(BC_PROVIDER).getCertificate(rootCertHolder);
-
-        storageService.exportRootKeyPairToKeystoreFile(rootKeyPair, rootCert, "root-cert", "root-cert.pfx", "PKCS12",
-                STORE_PASS);
-
-    }
-
-
-    public String generateCertificate(Map<String, Object> principalClaims, SigningSession signingSession,
-                                      Long certRequestedAt)
-            throws Exception {
-        Security.addProvider(new BouncyCastleProvider());
-
-        Path rootCertPath = null;
-        boolean fileFound = false;
-        while (!fileFound) {
-            try {
-                rootCertPath = storageService.loadRootCert("root-cert.pfx");
-                fileFound = true;
-            } catch (CustomFileNotFoundException ex) {
-                generateRootCertificate();
-            }
-        }
-
-        KeyStore keyStore = KeyStore.getInstance("PKCS12", BC_PROVIDER);
-        keyStore.load(new FileInputStream(String.valueOf(rootCertPath)), STORE_PASS.toCharArray());
-        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry("root-cert",
-                new KeyStore.PasswordProtection(STORE_PASS.toCharArray()));
-        PrivateKey rootPrivateKey = privateKeyEntry.getPrivateKey();
-
-        X509Certificate rootCert = (X509Certificate) keyStore.getCertificate("root-cert");
-
-        X500Name rootCertIssuer = new X500Name(rootCert.getIssuerX500Principal().getName());
-        X500Name rootCertSubject = new X500Name(rootCert.getSubjectX500Principal().getName());
-
-
+        // Create validity period of 1 year
         Calendar calendar = Calendar.getInstance();
         Date startDate = new Date(); // current time
         calendar.setTime(startDate);
-        calendar.add(Calendar.MINUTE, 60);
+        calendar.add(Calendar.YEAR, 1);
         Date endDate = calendar.getTime();
 
+        X509v3CertificateBuilder certBuilder =
+                new JcaX509v3CertificateBuilder(subject, serialNumber, startDate, endDate, subject,
+                        keyPair.getPublic());
 
-        // Initialize a new KeyPair generator
-        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(KEY_ALGORITHM, BC_PROVIDER);
-        keyPairGenerator.initialize(2048);
+        // Add extensions
+        JcaX509ExtensionUtils rootCertExtUtils = new JcaX509ExtensionUtils();
 
-        // Generate a new KeyPair and sign it using the Root Cert Private Key
-        // by generating a CSR (Certificate Signing Request)
-        X500Name issuedCertSubject = new X500Name("CN=" + principalClaims.get("name"));
-        BigInteger issuedCertSerialNum = new BigInteger(Long.toString(new SecureRandom().nextLong()));
-        KeyPair issuedCertKeyPair = keyPairGenerator.generateKeyPair();
+        // A BasicConstraint to mark root certificate as CA certificate
+        certBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
 
-        PKCS10CertificationRequestBuilder
-                p10Builder = new JcaPKCS10CertificationRequestBuilder(issuedCertSubject, issuedCertKeyPair.getPublic());
-        JcaContentSignerBuilder csrBuilder = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(BC_PROVIDER);
+        // Add identifier of root certificate subject as extension
+        certBuilder.addExtension(Extension.subjectKeyIdentifier, false,
+                rootCertExtUtils.createSubjectKeyIdentifier(keyPair.getPublic()));
 
-        // Sign the new KeyPair with the root cert Private Key
-        ContentSigner csrContentSigner = csrBuilder.build(rootPrivateKey);
-        PKCS10CertificationRequest csr = p10Builder.build(csrContentSigner);
-
-        // Use the Signed KeyPair and CSR to generate an issued Certificate
-        // Here serial number is randomly generated. In general, CAs use
-        // a sequence to generate Serial number and avoid collisions
-        X509v3CertificateBuilder issuedCertBuilder =
-                new X509v3CertificateBuilder(rootCertIssuer, issuedCertSerialNum, startDate, endDate, csr.getSubject(),
-                        csr.getSubjectPublicKeyInfo());
-
-        JcaX509ExtensionUtils issuedCertExtUtils = new JcaX509ExtensionUtils();
-
-        // Add Extensions
-        // Use BasicConstraints to say that this Cert is not a CA
-        issuedCertBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
-
-        // Add Issuer cert identifier as Extension
-        issuedCertBuilder.addExtension(Extension.authorityKeyIdentifier, false,
-                issuedCertExtUtils.createAuthorityKeyIdentifier(rootCert));
-        issuedCertBuilder.addExtension(Extension.subjectKeyIdentifier, false,
-                issuedCertExtUtils.createSubjectKeyIdentifier(csr.getSubjectPublicKeyInfo()));
-
-        // Add intended key usage extension if needed
-//        issuedCertBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.keyEncipherment));
-        issuedCertBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.digitalSignature));
-
-        // Add DNS name is cert is to used for SSL
-        issuedCertBuilder.addExtension(Extension.subjectAlternativeName, false, new DERSequence(new ASN1Encodable[]{
-                new GeneralName(GeneralName.dNSName, "mydomain.local"),
-                new GeneralName(GeneralName.iPAddress, "127.0.0.1")
-        }));
-
-        X509CertificateHolder issuedCertHolder = issuedCertBuilder.build(csrContentSigner);
-        X509Certificate issuedCert =
-                new JcaX509CertificateConverter().setProvider(BC_PROVIDER).getCertificate(issuedCertHolder);
-
-        // Verify the issued cert signature against the root (issuer) cert
-        issuedCert.verify(rootCert.getPublicKey(), BC_PROVIDER);
-
-        Long issuedAt = Instant.now().getEpochSecond();
-
-        String keystorePassword = StringUtils.randomAlphanumeric(7).toUpperCase();
-
-        if (signingSession.getCertificate() == null) {
-            Certificate certificate = Certificate.builder()
-                    .signingSession(signingSession)
-                    .serialNumber(issuedCertSerialNum)
-                    .requestedAt(certRequestedAt)
-                    .issuedAt(issuedAt)
-                    .build();
-
-            signingSession.setCertificate(certificate);
-        }
-        else {
-            signingSession.getCertificate().setSerialNumber(issuedCertSerialNum);
-            signingSession.getCertificate().setRequestedAt(certRequestedAt);
-            signingSession.getCertificate().setIssuedAt(issuedAt);
-        }
+        // Set intended key usage extension
+        certBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.cRLSign | KeyUsage.keyCertSign));
 
 
-        storageService.exportKeyPairToKeystoreFile(issuedCertKeyPair, issuedCert, "issued-cert",
-                issuedCertSerialNum + ".pfx",
-                "PKCS12", keystorePassword);
+        JcaContentSignerBuilder contentSignerBuilder = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM);
+        contentSignerBuilder.setProvider(BC_PROVIDER);
+        ContentSigner contentSigner = contentSignerBuilder.build(keyPair.getPrivate());
 
-        return keystorePassword;
+        // Create a cert holder and export to X509Certificate
+        X509CertificateHolder certHolder = certBuilder.build(contentSigner);
+        X509Certificate rootCert =
+                new JcaX509CertificateConverter().setProvider(BC_PROVIDER).getCertificate(certHolder);
+
+        storageService.exportRootKeyPairToKeystoreFile(keyPair, rootCert, "root-cert", "root-cert.pfx", "PKCS12",
+                STORE_PASS);
 
     }
-
-    // TODO dodaj 3 timestamp-a na signature appereance
 
     public boolean verifyKeystorePassword(SigningSession signingSession, String keystorePassword)
             throws KeyStoreException, CertificateException, NoSuchAlgorithmException {
@@ -251,4 +132,171 @@ public class CertificateGenerationService {
         return true;
     }
 
+    public String generateUserCertificate(Map<String, Object> principalClaims, SigningSession signingSession,
+                                          Long certRequestedAt) throws Exception {
+        // Add the BouncyCastle Provider
+        Security.addProvider(new BouncyCastleProvider());
+
+        // Load root certificate or generate new if it doesn't exist
+        Path rootCertPath = null;
+        boolean fileFound = false;
+        while (!fileFound) {
+            try {
+                rootCertPath = storageService.loadRootCert("root-cert.pfx");
+                fileFound = true;
+            } catch (CustomFileNotFoundException ex) {
+                generateRootCertificate();
+            }
+        }
+
+        loadRootCertificate(rootCertPath);
+        KeyPair userCertificateKeyPair = generateUserKeyPair();
+        PKCS10CertificationRequest csr =
+                generateCSR(userCertificateKeyPair, String.valueOf(principalClaims.get("name")));
+        verifyCSR(csr);
+        X509Certificate userCertificate = signCSR(csr);
+        verifyUserCertificate(userCertificate);
+
+        // Update signing session
+        Long issuedAt = Instant.now().getEpochSecond();
+        if (signingSession.getCertificate() == null) {
+            Certificate certificate = Certificate.builder()
+                    .signingSession(signingSession)
+                    .serialNumber(userCertificate.getSerialNumber())
+                    .requestedAt(certRequestedAt)
+                    .issuedAt(issuedAt)
+                    .build();
+
+            signingSession.setCertificate(certificate);
+        }
+        else {
+            signingSession.getCertificate().setSerialNumber(userCertificate.getSerialNumber());
+            signingSession.getCertificate().setRequestedAt(certRequestedAt);
+            signingSession.getCertificate().setIssuedAt(issuedAt);
+        }
+
+        return lockAndStoreCertificate(userCertificateKeyPair, userCertificate);
+
+    }
+
+    private String lockAndStoreCertificate(KeyPair userCertificateKeyPair, X509Certificate userCertificate) {
+        // Lock keystore with password and save it as .pfx file
+        String keystorePassword = StringUtils.randomAlphanumeric(7).toUpperCase();
+        storageService.exportKeyPairToKeystoreFile(userCertificateKeyPair, userCertificate, "issued-cert",
+                userCertificate.getSerialNumber() + ".pfx",
+                "PKCS12", keystorePassword);
+
+        return keystorePassword;
+    }
+
+    private void verifyUserCertificate(X509Certificate userCertificate)
+            throws CertificateException, NoSuchAlgorithmException, SignatureException, InvalidKeyException,
+            NoSuchProviderException {
+        // Check the user certificate signature with root public key
+        userCertificate.verify(rootCert.getPublicKey(), BC_PROVIDER);
+    }
+
+    private X509Certificate signCSR(PKCS10CertificationRequest csr)
+            throws OperatorCreationException, CertificateException, NoSuchAlgorithmException, CertIOException {
+
+        // Create serial number for user certificate
+        BigInteger serialNumber = new BigInteger(Long.toString(new SecureRandom().nextLong()));
+
+        // Create validity period of 60 minutes for user certificate
+        Calendar calendar = Calendar.getInstance();
+        Date startDate = new Date(); // current time
+        calendar.setTime(startDate);
+        calendar.add(Calendar.MINUTE, 60);
+        Date endDate = calendar.getTime();
+
+        // Create user certificate builder
+        X509v3CertificateBuilder userCertBuilder =
+                new X509v3CertificateBuilder(rootCertSubject, serialNumber, startDate, endDate, csr.getSubject(),
+                        csr.getSubjectPublicKeyInfo());
+
+
+        // Add extensions
+        JcaX509ExtensionUtils issuedCertExtUtils = new JcaX509ExtensionUtils();
+
+        // Use BasicConstraints to state that user certificate is not a CA
+        userCertBuilder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+
+        // Add identifier of user certificate issuer (root certificate) as extension
+        userCertBuilder.addExtension(Extension.authorityKeyIdentifier, false,
+                issuedCertExtUtils.createAuthorityKeyIdentifier(rootCert));
+
+        // Add identifier of user certificate subject as extension
+        userCertBuilder.addExtension(Extension.subjectKeyIdentifier, false,
+                issuedCertExtUtils.createSubjectKeyIdentifier(csr.getSubjectPublicKeyInfo()));
+
+        // Set intended key usage extension to 'digital signature' since user certificate should only be used to sign documents
+        userCertBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.digitalSignature));
+
+        // Sign user certificate with root private key
+        JcaContentSignerBuilder contentSignerBuilder =
+                new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(BC_PROVIDER);
+        ContentSigner contentSigner = contentSignerBuilder.build(rootPrivateKey);
+        X509CertificateHolder userCertHolder = userCertBuilder.build(contentSigner);
+        return new JcaX509CertificateConverter().setProvider(BC_PROVIDER).getCertificate(userCertHolder);
+    }
+
+    private void verifyCSR(PKCS10CertificationRequest csr) throws OperatorCreationException, PKCSException {
+        // Check CSR signature with user's public key
+        JcaContentVerifierProviderBuilder contentVerifierProviderBuilder = new JcaContentVerifierProviderBuilder();
+        ContentVerifierProvider contentVerifierProvider =
+                contentVerifierProviderBuilder.build(csr.getSubjectPublicKeyInfo());
+        if (!csr.isSignatureValid(contentVerifierProvider)) {
+            throw new IllegalStateException("Invalid Signature on CSR");
+        }
+    }
+
+    private PKCS10CertificationRequest generateCSR(KeyPair userCertificateKeyPair, String userName)
+            throws OperatorCreationException {
+        // Create CSR (Certificate Signing Request) with user's public key and subject
+        X500Name subject = new X500Name("CN=" + userName);
+        PKCS10CertificationRequestBuilder
+                builder = new JcaPKCS10CertificationRequestBuilder(subject, userCertificateKeyPair.getPublic());
+
+        // Sign CSR with user's private key
+        JcaContentSignerBuilder contentSignerBuilder =
+                new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(BC_PROVIDER);
+        ContentSigner contentSigner = contentSignerBuilder.build(userCertificateKeyPair.getPrivate());
+        return builder.build(contentSigner);
+    }
+
+    private KeyPair generateUserKeyPair() throws NoSuchAlgorithmException, NoSuchProviderException {
+        // Initialize a new KeyPair generator and generating private and public key for user
+        KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(KEY_ALGORITHM, BC_PROVIDER);
+        keyPairGenerator.initialize(2048);
+        return keyPairGenerator.generateKeyPair();
+    }
+
+    private void loadRootCertificate(Path rootCertPath)
+            throws KeyStoreException, NoSuchProviderException, IOException, UnrecoverableEntryException,
+            NoSuchAlgorithmException, CertificateException {
+        // Extract root certificate
+        keyStore = KeyStore.getInstance("PKCS12", BC_PROVIDER);
+        keyStore.load(new FileInputStream(String.valueOf(rootCertPath)), STORE_PASS.toCharArray());
+        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) keyStore.getEntry("root-cert",
+                new KeyStore.PasswordProtection(STORE_PASS.toCharArray()));
+        rootPrivateKey = privateKeyEntry.getPrivateKey();
+        rootCert = (X509Certificate) keyStore.getCertificate("root-cert");
+        rootCertSubject = new X500Name(rootCert.getSubjectX500Principal().getName());
+    }
+
 }
+
+// TODO log fajlovi
+
+//A certificate signing request (CSR) is a document that an entity (such as a server or individual) generates and submits
+//to a certificate authority (CA) in order to request a certificate. A CSR contains information about the entity, such as
+//its distinguished name (DN) and public key, and is signed using the private key of the entity.
+
+//The CSR is not signed with the CA's private key, but instead signed by the entity requesting the certificate using its
+//own private key. The signature on the CSR serves as proof that the request for a certificate is legitimate and that the
+//entity requesting the certificate is in possession of the private key that corresponds to the public key in the CSR.
+
+//When a CA receives a CSR, it uses the public key in the CSR to verify the signature and ensure that the request is
+//legitimate. If the signature is valid, the CA will create a certificate using the information in the CSR and sign it
+//with its own private key. The resulting certificate can be verified by anyone using the public key of the CA, allowing
+//them to trust the identity information contained in the certificate.

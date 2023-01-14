@@ -17,7 +17,7 @@ public class DocumentResponse {
 
     private String fileName;
 
-    private Long addedOn;
+    private Long addedAt;
 
     private String signedFileName;
 }

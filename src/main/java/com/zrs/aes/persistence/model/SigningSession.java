@@ -13,20 +13,20 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table
 public class SigningSession {
 
     @Id
     @GeneratedValue
     @Type(type = "uuid-char")
+    @Column(name = "id")
     private UUID id;
 
-    @OneToOne(cascade = CascadeType.ALL)
+    @OneToOne(mappedBy = "signingSession", cascade = CascadeType.ALL)
     @PrimaryKeyJoinColumn
     @JsonIgnore
     private Document document;
 
-    @OneToOne(cascade = CascadeType.ALL)
+    @OneToOne(mappedBy = "signingSession", cascade = CascadeType.ALL)
     @PrimaryKeyJoinColumn
     @JsonIgnore
     private Certificate certificate;

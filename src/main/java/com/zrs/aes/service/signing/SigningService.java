@@ -20,10 +20,8 @@ import java.nio.file.Paths;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.spec.X509EncodedKeySpec;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.Map;
-import java.util.UUID;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 @Service
 public class SigningService {
@@ -121,6 +119,9 @@ public class SigningService {
         Path finalDestPath =
                 Paths.get(BASE_DEST + UUID.randomUUID() + "_" + fileToBeSignedPath.getFileName().toString());
 
+//        TODO pokusaj da se izmeni dokument(integritet) bruno strana 49
+//        TODO probaj da istekne sertifikat 60 min pa da onda potpise sta se desi
+//        TODO probaj da ipak das da se potpise potpisani ali moras promeniti sig field name 52 str
         PdfReader pdfReader = new PdfReader(fileToBeSignedPath.toString());
         OutputStream result = new FileOutputStream(finalDestPath.toString());
         PdfSigner pdfSigner =
@@ -146,7 +147,9 @@ public class SigningService {
         pdfSigner.signDetached(externalDigest, signature, certificateChain, null, null, null, 0,
                 PdfSigner.CryptoStandard.CADES);
 
-        signingSession.getDocument().setSignedAt(Instant.now().getEpochSecond());
+        Calendar signDate = pdfSigner.getSignDate();
+
+        signingSession.getDocument().setSignedAt(signDate.getTimeInMillis());
         signingSession.getCertificate().setPublicKey(pemFormattedPublicKey);
 
         // dispose certificate
@@ -173,12 +176,18 @@ public class SigningService {
         MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
         String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
 
+        SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy. HH:mm");
+
         String reason = "Email address: " + principalClaims.get("email") + "\n"
                 + "Phone number: " + principalClaims.get("mobile") + "\n"
                 + "Based on the signing session with ID:" + "\n"
                 + signingSession.getId() + "\n"
                 + "for which the user was issued a certificate with serial number: " + "\n"
-                + signingSession.getCertificate().getSerialNumber();
+                + signingSession.getCertificate().getSerialNumber() + "\n"
+                + "Recorded activities:" + "\n"
+                + sdf.format(new Date(signingSession.getCertificate().getRequestedAt() * 1000)) +
+                " - signature requested" + "\n"
+                + sdf.format(new Date(signingSession.getCertificate().getIssuedAt() * 1000)) + " - certificate issued";
 
         return reason;
     }

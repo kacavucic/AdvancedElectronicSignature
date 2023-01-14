@@ -13,17 +13,16 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table
 public class Certificate {
 
     @Id
-    @Column
+    @Column(name = "signing_session_id")
     @Type(type = "uuid-char")
     private UUID id;
 
     @OneToOne
     @MapsId
-    @JoinColumn
+    @JoinColumn(name = "signing_session_id")
     private SigningSession signingSession;
 
     @Column(columnDefinition = "DECIMAL(65,0)")

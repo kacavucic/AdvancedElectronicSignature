@@ -23,15 +23,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import javax.mail.MessagingException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.UnrecoverableEntryException;
-import java.security.cert.CertificateException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -151,11 +147,11 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
         signingSession.setConsent(true);
         String keystorePassword =
-                certificateGenerationService.generateCertificate(principalClaims, signingSession, certRequestedAt);
+                certificateGenerationService.generateUserCertificate(principalClaims, signingSession, certRequestedAt);
 
         signingSession.setStatus(Status.IN_PROGRESS);
 
-        // smsService.sendSigningSms(principalClaims, keystorePassword);
+//        smsService.sendSigningSms(principalClaims, keystorePassword);
         emailService.sendSigningEmail(principalClaims, keystorePassword);
 
         return save(signingSession);
@@ -206,6 +202,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
     }
 
+    // TODO check cert validity before signing
+
     @Override
     public void addSigningAttempt(SigningSession signingSession) {
         signingSession.setSignAttempts(signingSession.getSignAttempts() + 1);
@@ -226,7 +224,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
 
         String keystorePassword =
-                certificateGenerationService.generateCertificate(principalClaims, signingSession, certRequestedAt);
+                certificateGenerationService.generateUserCertificate(principalClaims, signingSession, certRequestedAt);
 
 
         signingSession.setResendAttempts(resendAttempts);

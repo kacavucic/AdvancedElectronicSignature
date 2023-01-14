@@ -40,7 +40,7 @@ public class Mapper {
         DocumentResponse documentResponse = DocumentResponse.builder()
                 .id(signingSession.getDocument().getId())
                 .fileName(signingSession.getDocument().getFileName())
-                .addedOn(signingSession.getDocument().getAddedAt())
+                .addedAt(signingSession.getDocument().getAddedAt())
                 .signedFileName(signingSession.getDocument().getSignedFileName())
                 .build();
 
