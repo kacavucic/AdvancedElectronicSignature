@@ -3,6 +3,7 @@ package com.zrs.aes.service.certificate;
 import com.itextpdf.kernel.pdf.PdfDictionary;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfReader;
+import com.itextpdf.signatures.CertificateUtil;
 import com.itextpdf.signatures.PdfPKCS7;
 import com.itextpdf.signatures.PdfSignature;
 import com.itextpdf.signatures.SignatureUtil;
@@ -13,22 +14,43 @@ import org.bouncycastle.util.encoders.HexEncoder;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
-import java.security.GeneralSecurityException;
-import java.security.Security;
+import java.security.*;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 
 public class SignatureExtraction {
     final static File RESULT_FOLDER = new File("src/main/resources/static");
+    static BouncyCastleProvider provider = new BouncyCastleProvider();
+
 
     public static void main(String args[])
             throws IOException, NoSuchFieldException, IllegalAccessException, CMSException, OperatorCreationException,
             GeneralSecurityException {
 
-        BouncyCastleProvider provider = new BouncyCastleProvider();
         Security.removeProvider(provider.getName());
-        extractHashes();
+        Security.addProvider(provider);
+//        extractHashes();
+        getCRLURLs();
+    }
+
+
+    private static void getCRLURLs()
+            throws KeyStoreException, NoSuchProviderException, CertificateException, IOException,
+            NoSuchAlgorithmException {
+        KeyStore ks = KeyStore.getInstance("pkcs12", provider.getName());
+        ks.load(new FileInputStream(
+                        "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/static/uploadedCerts/1715677820070000751.pfx"),
+                "SF3CLPW".toCharArray());
+        java.security.cert.Certificate[] chain = ks.getCertificateChain("issued-cert");
+        for (int i = 0; i < chain.length; i++) {
+            X509Certificate cert = (X509Certificate) chain[i];
+            System.out.println(String.format("[%s] %s", i, cert.getSubjectDN()));
+            System.out.println(CertificateUtil.getCRLURL(cert));
+        }
     }
 
 
@@ -59,10 +81,12 @@ public class SignatureExtraction {
 
             Files.write(
                     new File(RESULT_FOLDER,
-                            String.format("signedpdf-%s%s.hash", "Advanced Electronic Signature", "-attr")).toPath(),
+                            String.format("signedpdf-%s%s.hash", "Advanced Electronic Signature",
+                                    "-attr")).toPath(),
                     digestAttr);
             Files.write(new File(RESULT_FOLDER,
-                            String.format("signedpdf-%s%s.hash", "Advanced Electronic Signature", "-attr") + ".hex").toPath(),
+                            String.format("signedpdf-%s%s.hash", "Advanced Electronic Signature", "-attr") +
+                                    ".hex").toPath(),
                     digestAttrHex);
         }
         else {

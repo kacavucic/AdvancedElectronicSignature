@@ -175,7 +175,8 @@ public class StorageServiceImpl implements IStorageService {
     }
 
     @Override
-    public Path exportKeyPairToKeystoreFile(KeyPair keyPair, X509Certificate certificate, String alias, String fileName,
+    public Path exportKeyPairToKeystoreFile(KeyPair keyPair, X509Certificate certificate,
+                                            X509Certificate rootCertificate, String alias, String fileName,
                                             String storeType, String storePass) {
 
         Path filePath = Paths.get(fileName);
@@ -192,11 +193,11 @@ public class StorageServiceImpl implements IStorageService {
         }
 
         try {
-            KeyStore sslKeyStore = KeyStore.getInstance(storeType, BC_PROVIDER);
-            sslKeyStore.load(null, null);
-            sslKeyStore.setKeyEntry(alias, keyPair.getPrivate(), null, new X509Certificate[]{certificate});
+            KeyStore ks = KeyStore.getInstance(storeType, BC_PROVIDER);
+            ks.load(null, null);
+            ks.setKeyEntry(alias, keyPair.getPrivate(), null, new X509Certificate[]{certificate, rootCertificate});
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            sslKeyStore.store(baos, storePass.toCharArray());
+            ks.store(baos, storePass.toCharArray());
             byte[] keystoreBytes = baos.toByteArray();
             Files.copy(new ByteArrayInputStream(keystoreBytes), targetPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {
@@ -225,11 +226,11 @@ public class StorageServiceImpl implements IStorageService {
         }
 
         try {
-            KeyStore sslKeyStore = KeyStore.getInstance(storeType, BC_PROVIDER);
-            sslKeyStore.load(null, null);
-            sslKeyStore.setKeyEntry(alias, keyPair.getPrivate(), null, new X509Certificate[]{certificate});
+            KeyStore ks = KeyStore.getInstance(storeType, BC_PROVIDER);
+            ks.load(null, null);
+            ks.setKeyEntry(alias, keyPair.getPrivate(), null, new X509Certificate[]{certificate});
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            sslKeyStore.store(baos, storePass.toCharArray());
+            ks.store(baos, storePass.toCharArray());
             byte[] keystoreBytes = baos.toByteArray();
             Files.copy(new ByteArrayInputStream(keystoreBytes), targetPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {

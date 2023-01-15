@@ -6,16 +6,15 @@ import com.zrs.aes.service.signing.SigningProperties;
 import com.zrs.aes.service.storage.IStorageService;
 import com.zrs.aes.web.customexceptions.CustomFileNotFoundException;
 import org.bouncycastle.asn1.x500.X500Name;
-import org.bouncycastle.asn1.x509.BasicConstraints;
 import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.KeyUsage;
+import org.bouncycastle.asn1.x509.*;
 import org.bouncycastle.cert.CertIOException;
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.X509v2CRLBuilder;
 import org.bouncycastle.cert.X509v3CertificateBuilder;
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils;
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
+import org.bouncycastle.cert.jcajce.*;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.ContentVerifierProvider;
 import org.bouncycastle.operator.OperatorCreationException;
@@ -29,13 +28,13 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.util.StringUtils;
 
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.*;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
+import java.security.cert.*;
 import java.time.Instant;
 import java.util.Calendar;
 import java.util.Date;
@@ -62,6 +61,11 @@ public class CertificateGenerationService {
         this.STORE_PASS = signingProperties.getStorePass();
         this.KEY_PASS = signingProperties.getKeyPass().toCharArray();
         this.storageService = storageService;
+    }
+
+    public static Date calculateDate(int hoursInFuture) {
+        long secs = System.currentTimeMillis() / 1000;
+        return new Date((secs + (hoursInFuture * 60 * 60)) * 1000);
     }
 
     private void generateRootCertificate() throws Exception {
@@ -102,6 +106,14 @@ public class CertificateGenerationService {
         certBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.cRLSign | KeyUsage.keyCertSign));
 
 
+//        GeneralName generalName = new GeneralName(GeneralName.directoryName,
+//                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.pem");
+//        GeneralNames generalNames = new GeneralNames(generalName);
+//        DistributionPointName distPointOne = new DistributionPointName(generalNames);
+//        DistributionPoint[] distPoints = new DistributionPoint[]{new DistributionPoint(distPointOne, null, null)};
+//        certBuilder.addExtension(Extension.cRLDistributionPoints, false, new CRLDistPoint(distPoints));
+
+
         JcaContentSignerBuilder contentSignerBuilder = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM);
         contentSignerBuilder.setProvider(BC_PROVIDER);
         ContentSigner contentSigner = contentSignerBuilder.build(keyPair.getPrivate());
@@ -111,9 +123,36 @@ public class CertificateGenerationService {
         X509Certificate rootCert =
                 new JcaX509CertificateConverter().setProvider(BC_PROVIDER).getCertificate(certHolder);
 
+        X509CRL crl = createEmptyCRL(rootCert, keyPair.getPrivate());
+
         storageService.exportRootKeyPairToKeystoreFile(keyPair, rootCert, "root-cert", "root-cert.pfx", "PKCS12",
                 STORE_PASS);
 
+    }
+
+    private X509CRL createEmptyCRL(X509Certificate rootCert, PrivateKey rootPrivateKey)
+            throws NoSuchAlgorithmException, CertificateEncodingException, CRLException, IOException,
+            OperatorCreationException {
+
+        X509v2CRLBuilder crlBuilder = new JcaX509v2CRLBuilder(rootCert.getSubjectX500Principal(),
+                calculateDate(0));
+        crlBuilder.setNextUpdate(calculateDate(24 * 7));
+
+        // add extensions to CRL
+        JcaX509ExtensionUtils extUtils = new JcaX509ExtensionUtils();
+        crlBuilder.addExtension(Extension.authorityKeyIdentifier, false,
+                extUtils.createAuthorityKeyIdentifier(rootCert));
+
+        ContentSigner signer =
+                new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(BC_PROVIDER).build(rootPrivateKey);
+        JcaX509CRLConverter converter = new JcaX509CRLConverter().setProvider(BC_PROVIDER);
+        X509CRL crl = converter.getCRL(crlBuilder.build(signer));
+        FileWriter fileWriter = new FileWriter(
+                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.pem");
+        try (JcaPEMWriter pemWriter = new JcaPEMWriter(fileWriter)) {
+            pemWriter.writeObject(crl);
+        }
+        return crl;
     }
 
     public boolean verifyKeystorePassword(SigningSession signingSession, String keystorePassword)
@@ -182,7 +221,7 @@ public class CertificateGenerationService {
     private String lockAndStoreCertificate(KeyPair userCertificateKeyPair, X509Certificate userCertificate) {
         // Lock keystore with password and save it as .pfx file
         String keystorePassword = StringUtils.randomAlphanumeric(7).toUpperCase();
-        storageService.exportKeyPairToKeystoreFile(userCertificateKeyPair, userCertificate, "issued-cert",
+        storageService.exportKeyPairToKeystoreFile(userCertificateKeyPair, userCertificate, rootCert, "issued-cert",
                 userCertificate.getSerialNumber() + ".pfx",
                 "PKCS12", keystorePassword);
 
