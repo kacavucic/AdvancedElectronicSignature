@@ -28,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.thymeleaf.util.StringUtils;
 
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -105,15 +106,6 @@ public class CertificateGenerationService {
         // Set intended key usage extension
         certBuilder.addExtension(Extension.keyUsage, false, new KeyUsage(KeyUsage.cRLSign | KeyUsage.keyCertSign));
 
-
-//        GeneralName generalName = new GeneralName(GeneralName.directoryName,
-//                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.pem");
-//        GeneralNames generalNames = new GeneralNames(generalName);
-//        DistributionPointName distPointOne = new DistributionPointName(generalNames);
-//        DistributionPoint[] distPoints = new DistributionPoint[]{new DistributionPoint(distPointOne, null, null)};
-//        certBuilder.addExtension(Extension.cRLDistributionPoints, false, new CRLDistPoint(distPoints));
-
-
         JcaContentSignerBuilder contentSignerBuilder = new JcaContentSignerBuilder(SIGNATURE_ALGORITHM);
         contentSignerBuilder.setProvider(BC_PROVIDER);
         ContentSigner contentSigner = contentSignerBuilder.build(keyPair.getPrivate());
@@ -147,11 +139,17 @@ public class CertificateGenerationService {
                 new JcaContentSignerBuilder(SIGNATURE_ALGORITHM).setProvider(BC_PROVIDER).build(rootPrivateKey);
         JcaX509CRLConverter converter = new JcaX509CRLConverter().setProvider(BC_PROVIDER);
         X509CRL crl = converter.getCRL(crlBuilder.build(signer));
+
         FileWriter fileWriter = new FileWriter(
                 "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.pem");
         try (JcaPEMWriter pemWriter = new JcaPEMWriter(fileWriter)) {
             pemWriter.writeObject(crl);
         }
+
+        FileOutputStream fos = new FileOutputStream("C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl");
+        fos.write(crl.getEncoded());
+        fos.close();
+
         return crl;
     }
 

@@ -10,7 +10,10 @@ import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
 import com.zrs.aes.service.storage.IStorageService;
+import org.bouncycastle.cert.ocsp.OCSPException;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.bouncycastle.operator.OperatorException;
+import org.bouncycastle.x509.util.StreamParsingException;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -19,6 +22,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.*;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509CRL;
 import java.security.spec.X509EncodedKeySpec;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -77,7 +82,8 @@ public class SigningService {
 
     public Path sign(SigningSession signingSession, String clientIp, Map<String, Object> principalClaims,
                      String keystorePassword)
-            throws IOException, GeneralSecurityException, GeoIp2Exception {
+            throws IOException, GeneralSecurityException, GeoIp2Exception, OCSPException, StreamParsingException,
+            OperatorException {
 
         Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
 
@@ -142,18 +148,41 @@ public class SigningService {
         appearance.setContact(contact); // ???
         appearance.setSignatureCreator(provider.getName());
 
+        ITSAClient tsaClient = new TSAClientBouncyCastle("https://freetsa.org/tsr", "", "", 8192, "SHA-256");
+
+        FileInputStream is = new FileInputStream(
+                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        byte[] buf = new byte[1024];
+        while (is.read(buf) != -1) {
+            baos.write(buf);
+        }
+        ICrlClient crlClient = new CrlClientOffline(baos.toByteArray());
+        List<ICrlClient> crlList = new ArrayList<ICrlClient>();
+        crlList.add(crlClient);
+        CertificateFactory cf = CertificateFactory.getInstance("X.509");
+        X509CRL crl = (X509CRL) cf.generateCRL(new FileInputStream(
+                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl"));
+        System.out.println("CRL valid until: " + crl.getNextUpdate());
+        System.out.println("Certificate revoked: " + crl.isRevoked(certificateChain[0]));
+        is.close();
+
         IExternalSignature signature = new PrivateKeySignature(privateKey, "SHA256", provider.getName());
         IExternalDigest externalDigest = new BouncyCastleDigest();
-        pdfSigner.signDetached(externalDigest, signature, certificateChain, null, null, null, 0,
+        pdfSigner.signDetached(externalDigest, signature, certificateChain, crlList, null, tsaClient, 0,
                 PdfSigner.CryptoStandard.CADES);
 
-        Calendar signDate = pdfSigner.getSignDate();
 
+        pdfDocument.close();
+
+
+        Calendar signDate = pdfSigner.getSignDate();
         signingSession.getDocument().setSignedAt(signDate.getTimeInMillis());
         signingSession.getCertificate().setPublicKey(pemFormattedPublicKey);
 
         // dispose certificate
         storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
+
 
         return finalDestPath;
     }
