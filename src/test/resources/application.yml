@@ -8,6 +8,8 @@ server:
 file:
   upload-dir: src/main/resources/static/uploadedDocuments
   download-dir: src/main/resources/static/signedDocuments
+  upload-cert-dir: src/main/resources/static/uploadedCerts
+  root-cert-path: src/main/resources/encryption
 
 ####### resource server configuration properties
 spring:

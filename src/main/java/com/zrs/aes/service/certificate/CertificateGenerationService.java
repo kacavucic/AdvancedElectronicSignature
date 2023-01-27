@@ -55,13 +55,16 @@ public class CertificateGenerationService {
     private KeyStore keyStore;
     private PrivateKey rootPrivateKey;
     private X509Certificate rootCert;
+    private KeyStorePasswordGenerator keyPassGenerator;
+
 
     // TODO dodaj 3 timestamp-a na signature appereance
 
-    public CertificateGenerationService(SigningProperties signingProperties, IStorageService storageService) {
+    public CertificateGenerationService(SigningProperties signingProperties, IStorageService storageService, KeyStorePasswordGenerator keyPassGenerator) {
         this.STORE_PASS = signingProperties.getStorePass();
         this.KEY_PASS = signingProperties.getKeyPass().toCharArray();
         this.storageService = storageService;
+        this.keyPassGenerator = keyPassGenerator;
     }
 
     public static Date calculateDate(int hoursInFuture) {
@@ -196,6 +199,8 @@ public class CertificateGenerationService {
 
         // Update signing session
         Long issuedAt = Instant.now().getEpochSecond();
+        String keystorePassword = keyPassGenerator.generate();
+
         if (signingSession.getCertificate() == null) {
             Certificate certificate = Certificate.builder()
                     .signingSession(signingSession)
@@ -212,13 +217,13 @@ public class CertificateGenerationService {
             signingSession.getCertificate().setIssuedAt(issuedAt);
         }
 
-        return lockAndStoreCertificate(userCertificateKeyPair, userCertificate);
+        return lockAndStoreCertificate(userCertificateKeyPair, userCertificate, keystorePassword);
 
     }
 
-    private String lockAndStoreCertificate(KeyPair userCertificateKeyPair, X509Certificate userCertificate) {
+    private String lockAndStoreCertificate(KeyPair userCertificateKeyPair, X509Certificate userCertificate, String keystorePassword) {
         // Lock keystore with password and save it as .pfx file
-        String keystorePassword = StringUtils.randomAlphanumeric(7).toUpperCase();
+//        String keystorePassword = StringUtils.randomAlphanumeric(7).toUpperCase();
         storageService.exportKeyPairToKeystoreFile(userCertificateKeyPair, userCertificate, rootCert, "issued-cert",
                 userCertificate.getSerialNumber() + ".pfx",
                 "PKCS12", keystorePassword);

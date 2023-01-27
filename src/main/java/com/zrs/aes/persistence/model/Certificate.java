@@ -35,6 +35,6 @@ public class Certificate {
     private Long issuedAt;
 
     @Column(length = 3000)
-    private String publicKey;
+    private String certificate;
 
 }

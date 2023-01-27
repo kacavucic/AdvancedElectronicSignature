@@ -115,10 +115,7 @@ public class SigningService {
         // Get the X509EncodedKeySpec for the key
         X509EncodedKeySpec keySpec = keyFactory.getKeySpec(publicKey, X509EncodedKeySpec.class);
 
-        // Generate the PEM-formatted key
-        String pemFormattedPublicKey = "-----BEGIN PUBLIC KEY-----\n" +
-                Base64.getEncoder().encodeToString(keySpec.getEncoded()) +
-                "\n-----END PUBLIC KEY-----";
+        String cert = Base64.getEncoder().encodeToString(ks.getCertificate("issued-cert").getEncoded());
 
         Certificate[] certificateChain = privateKeyEntry.getCertificateChain();
         ///////////////////////////////////////////////////
@@ -179,7 +176,7 @@ public class SigningService {
 
         Calendar signDate = pdfSigner.getSignDate();
         signingSession.getDocument().setSignedAt(signDate.getTimeInMillis());
-        signingSession.getCertificate().setPublicKey(pemFormattedPublicKey);
+        signingSession.getCertificate().setCertificate(cert);
 
         // dispose certificate
         storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
