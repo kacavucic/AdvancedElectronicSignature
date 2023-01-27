@@ -3,6 +3,7 @@ package com.zrs.aes.service.signing;
 import com.itextpdf.kernel.geom.Rectangle;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfReader;
+import com.itextpdf.kernel.pdf.PdfWriter;
 import com.itextpdf.kernel.pdf.StampingProperties;
 import com.itextpdf.signatures.*;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
@@ -123,7 +124,7 @@ public class SigningService {
         ///////////////////////////////////////////////////
 
         Path finalDestPath =
-                Paths.get(BASE_DEST + UUID.randomUUID() + "_" + fileToBeSignedPath.getFileName().toString());
+                Paths.get(BASE_DEST + signingSession.getId() + "_" + fileToBeSignedPath.getFileName().toString());
 
 //        TODO pokusaj da se izmeni dokument(integritet) bruno strana 49
 //        TODO probaj da istekne sertifikat 60 min pa da onda potpise sta se desi
@@ -183,8 +184,52 @@ public class SigningService {
         // dispose certificate
         storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
 
+        addLTA(finalDestPath, crlClient, signingSession, fileToBeSignedPath);
 
         return finalDestPath;
+    }
+
+    private void addLTA(Path finalDestPath, ICrlClient crlClient, SigningSession signingSession,
+                        Path fileToBeSignedPath) throws IOException, GeneralSecurityException {
+        // Extend from B-T to B-LT
+        PdfReader pdfReader = new PdfReader(finalDestPath.toString());
+        Path ltPath =
+                Paths.get(BASE_DEST + signingSession.getId() + "_lt_" + fileToBeSignedPath.getFileName().toString());
+        PdfWriter pdfWriter = new PdfWriter(ltPath.toString());
+        PdfDocument pdfDoc = new PdfDocument(pdfReader, pdfWriter, new StampingProperties().useAppendMode());
+        LtvVerification v = new LtvVerification(pdfDoc);
+
+        v.addVerification("Advanced Electronic Signature", null, crlClient,
+                LtvVerification.CertificateOption.WHOLE_CHAIN,
+                LtvVerification.Level.CRL, LtvVerification.CertificateInclusion.YES);
+        v.merge();
+        pdfDoc.close();
+
+        // Extend from B-LT to B-LTA
+        PdfReader ltaReader = new PdfReader(
+                ltPath.toString());
+        Path ltaPath =
+                Paths.get(BASE_DEST + signingSession.getId() + "_lta_" + fileToBeSignedPath.getFileName().toString());
+        OutputStream os = new FileOutputStream(ltaPath.toString());
+        PdfSigner ps = new PdfSigner(ltaReader, os, new StampingProperties().useAppendMode());
+        ITSAClient tsaClient = new TSAClientBouncyCastle("https://freetsa.org/tsr", "", "", 8192, "SHA-256");
+        ps.timestamp(tsaClient, "Signature Validation Data Timestamp");
+
+        // Enable LTV for timestamp signature
+        PdfReader r = new PdfReader(ltaPath.toString());
+        PdfWriter w = new PdfWriter(finalDestPath.toString());
+        PdfDocument d = new PdfDocument(r, w, new StampingProperties().useAppendMode());
+
+        ICrlClient ltaCrlClient = new CrlClientOnline();
+        LtvVerification ltaV = new LtvVerification(d);
+        ltaV.addVerification("Signature Validation Data Timestamp", null, ltaCrlClient,
+                LtvVerification.CertificateOption.WHOLE_CHAIN,
+                LtvVerification.Level.CRL, LtvVerification.CertificateInclusion.YES);
+        ltaV.merge();
+        d.close();
+
+        storageService.deleteFile(ltPath);
+        storageService.deleteFile(ltaPath);
     }
 
     private String prepareLocation(String clientIp) throws IOException, GeoIp2Exception {

@@ -256,5 +256,16 @@ public class StorageServiceImpl implements IStorageService {
         }
     }
 
+    @Override
+    public void deleteFile(Path filePath) {
+        if (Files.exists(filePath)) {
+            try {
+                Files.delete(filePath);
+            } catch (IOException e) {
+                throw new CustomFileNotFoundException("File not found");
+            }
+        }
+    }
+
 
 }

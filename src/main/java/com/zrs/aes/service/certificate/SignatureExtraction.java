@@ -33,8 +33,8 @@ public class SignatureExtraction {
 
         Security.removeProvider(provider.getName());
         Security.addProvider(provider);
-//        extractHashes();
-        getCRLURLs();
+        extractHashes();
+//        getCRLURLs();
     }
 
 
@@ -56,7 +56,7 @@ public class SignatureExtraction {
 
     static void extractHashes() throws NoSuchFieldException, SecurityException,
             GeneralSecurityException, IllegalArgumentException, IllegalAccessException, IOException {
-        String pdfPath = "C:/Users/ACER/Desktop/DIPLOMSKI/slike/sig.pdf";
+        String pdfPath = "C:/Users/ACER/Desktop/AdvancedElectronicSignature/signedFinal.pdf";
         PdfReader pdfReader = new PdfReader(pdfPath);
         PdfDocument pdfDocument = new PdfDocument(pdfReader);
         SignatureUtil util = new SignatureUtil(pdfDocument);

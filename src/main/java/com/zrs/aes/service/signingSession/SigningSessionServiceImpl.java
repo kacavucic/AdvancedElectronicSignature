@@ -151,6 +151,8 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
 
         signingSession.setStatus(Status.IN_PROGRESS);
 
+        // TODO crl istice nakon 7 dana, moras pred odbranu novi da generises
+
 //        smsService.sendSigningSms(principalClaims, keystorePassword);
         emailService.sendSigningEmail(principalClaims, keystorePassword);
 
@@ -230,7 +232,7 @@ public class SigningSessionServiceImpl implements ISigningSessionService {
         signingSession.setResendAttempts(resendAttempts);
         signingSession.setSuspendedUntil(null);
 
-        // smsService.sendSigningSms(principalClaims, keystorePassword);
+//        smsService.sendSigningSms(principalClaims, keystorePassword);
         emailService.sendSigningEmail(principalClaims, keystorePassword);
         return save(signingSession);
     }

@@ -37,4 +37,6 @@ public interface IStorageService {
                                          String storeType, String keystorePassword);
 
     void deleteKeystore(String filename);
+
+    void  deleteFile(Path filePath);
 }
