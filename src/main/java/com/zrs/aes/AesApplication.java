@@ -17,7 +17,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
 @SpringBootApplication
-@EnableConfigurationProperties({StorageProperties.class, SigningProperties.class, SmsProperties.class})
+@EnableConfigurationProperties({StorageProperties.class, SigningProperties.class,
+        SmsProperties.class})
 @OpenAPIDefinition(info = @Info(title = "Advanced Electronic Signature API",
         description = "REST API for signing documents with advanced electronic signature", version = "1.0.0",
         contact = @Contact(name = "Katarina Vučić", email = "vucic.kat@gmail.com")),

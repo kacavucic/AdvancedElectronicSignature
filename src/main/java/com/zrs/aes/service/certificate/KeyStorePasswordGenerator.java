@@ -5,7 +5,8 @@ import org.thymeleaf.util.StringUtils;
 
 @Service
 public class KeyStorePasswordGenerator {
-    public String generate() {
-        return StringUtils.randomAlphanumeric(7).toUpperCase();
-    }
+
+  public String generate() {
+    return StringUtils.randomAlphanumeric(7).toUpperCase();
+  }
 }

@@ -11,24 +11,26 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 @Configuration
 public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
-    @Override
-    protected void configure(HttpSecurity http) throws Exception {
-        http.cors()
-                .and()
-                .authorizeRequests()
-                .antMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html","/v3/api-docs.yaml").permitAll()
-                .anyRequest()
-                .authenticated()
-                .and()
-                .oauth2ResourceServer()
-                .jwt();
-    }
+  @Override
+  protected void configure(HttpSecurity http) throws Exception {
+    http.cors()
+        .and()
+        .authorizeRequests()
+        .antMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs.yaml")
+        .permitAll()
+        .anyRequest()
+        .authenticated()
+        .and()
+        .oauth2ResourceServer()
+        .jwt();
+  }
 
-    @Bean
-    JwtDecoder jwtDecoder(OAuth2ResourceServerProperties properties) {
-        NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(properties.getJwt().getJwkSetUri()).build();
-        jwtDecoder.setClaimSetConverter(new OrganizationSubClaimAdapter());
-        return jwtDecoder;
-    }
+  @Bean
+  JwtDecoder jwtDecoder(OAuth2ResourceServerProperties properties) {
+    NimbusJwtDecoder jwtDecoder = NimbusJwtDecoder.withJwkSetUri(properties.getJwt().getJwkSetUri())
+        .build();
+    jwtDecoder.setClaimSetConverter(new OrganizationSubClaimAdapter());
+    return jwtDecoder;
+  }
 
 }

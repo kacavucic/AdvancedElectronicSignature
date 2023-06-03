@@ -8,136 +8,134 @@ import com.itextpdf.kernel.pdf.StampingProperties;
 import com.itextpdf.signatures.*;
 import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.zrs.aes.persistence.model.SigningSession;
+import com.zrs.aes.service.certificate.KeystoreLoader;
 import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
-import com.zrs.aes.service.storage.IStorageService;
-import org.bouncycastle.cert.ocsp.OCSPException;
+import com.zrs.aes.service.storage.StorageService;
+import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.operator.OperatorException;
-import org.bouncycastle.x509.util.StreamParsingException;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.*;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.Security;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509CRL;
-import java.security.spec.X509EncodedKeySpec;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
 @Service
+@Slf4j
 public class SigningService {
-    // TODO generate application-local.yml.aes again because of STORE_PASS and KEY_PASS
 
-    final String BASE_DEST = "src/main/resources/static/signedDocuments/";
-    final String STORE_PATH = "src/main/resources/encryption/keystore.jks";
-    final char[] STORE_PASS;
-    final char[] KEY_PASS;
-    private IStorageService storageService;
-    private GeoIPLocationService locationService;
+    // TODO generate application-local.yml.aes again
+    private static final String BASE_DEST = "src/main/resources/static/signedDocuments/";
+    private static final String ISSUED_CERT_ALIAS = "issued-cert";
+    private static final String DIGEST_ALGORITHM = "SHA-256";
+    private final StorageService storageService;
+    private final GeoIPLocationService locationService;
+    private final KeystoreLoader keystoreLoader;
 
-    public SigningService(SigningProperties signingProperties, IStorageService storageService,
-                          GeoIPLocationService locationService) {
-        this.STORE_PASS = signingProperties.getStorePass().toCharArray();
-        this.KEY_PASS = signingProperties.getKeyPass().toCharArray();
+    public SigningService(StorageService storageService, GeoIPLocationService locationService,
+                          KeystoreLoader keystoreLoader) {
         this.storageService = storageService;
         this.locationService = locationService;
+        this.keystoreLoader = keystoreLoader;
     }
 
-    // TODO Consent na sign
-
-    private static String getFileChecksum(MessageDigest digest, File file) throws IOException {
-        //Get file input stream for reading the file content
-        FileInputStream fis = new FileInputStream(file);
-
-        //Create byte array to read data in chunks
-        byte[] byteArray = new byte[1024];
-        int bytesCount = 0;
-
-        //Read file data and update in message digest
-        while ((bytesCount = fis.read(byteArray)) != -1) {
-            digest.update(byteArray, 0, bytesCount);
-        }
-        ;
-
-        //close the stream; We don't need it now.
-        fis.close();
-
-        //Get the hash's bytes
-        byte[] bytes = digest.digest();
-
-        //This bytes[] has bytes in decimal format;
-        //Convert it to hexadecimal format
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < bytes.length; i++) {
-            sb.append(Integer.toString((bytes[i] & 0xff) + 0x100, 16).substring(1));
-        }
-
-        //return complete hash
-        return sb.toString();
-    }
-
-    public Path sign(SigningSession signingSession, String clientIp, Map<String, Object> principalClaims,
-                     String keystorePassword)
-            throws IOException, GeneralSecurityException, GeoIp2Exception, OCSPException, StreamParsingException,
-            OperatorException {
-
-        Path fileToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
+    public Path sign(SigningSession signingSession, String clientIp,
+                     Map<String, Object> principalClaims, String keystorePassword)
+            throws GeneralSecurityException, IOException, GeoIp2Exception {
+        Path documentToBeSignedPath = storageService.load(signingSession.getDocument().getFileName());
 
         String reason = prepareReason(signingSession, principalClaims);
         String location = prepareLocation(clientIp);
         String contact = (String) principalClaims.get("email");
 
-        ///////////////////////////////////////////////////
-        File file = new File(BASE_DEST);
-        file.mkdir();
+        createDirectoryForSignedDocuments();
+        BouncyCastleProvider provider = initializeSecurityProvider();
 
-        BouncyCastleProvider provider = new BouncyCastleProvider();
-        Security.removeProvider(provider.getName());
-        Security.addProvider(provider);
+        KeyStore keyStore = keystoreLoader.loadKeystore(signingSession, keystorePassword);
+        KeyStore.PrivateKeyEntry privateKeyEntry = getPrivateKeyEntry(keyStore, keystorePassword);
 
-        // TODO chain, usage, izgled potpisa, otp na 2fa i resent tamo
-
-        Path uploadedCert = storageService.loadCert(signingSession.getCertificate().getSerialNumber() + ".pfx");
-        KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
-        ks.load(Files.newInputStream(uploadedCert), keystorePassword.toCharArray());
-        KeyStore.PrivateKeyEntry privateKeyEntry = (KeyStore.PrivateKeyEntry) ks.getEntry("issued-cert",
-                new KeyStore.PasswordProtection(keystorePassword.toCharArray()));
         PrivateKey privateKey = privateKeyEntry.getPrivateKey();
-        PublicKey publicKey = ks.getCertificate("issued-cert").getPublicKey();
-        // Get the KeyFactory for the key's algorithm
-        KeyFactory keyFactory = KeyFactory.getInstance(publicKey.getAlgorithm());
-
-        // Get the X509EncodedKeySpec for the key
-        X509EncodedKeySpec keySpec = keyFactory.getKeySpec(publicKey, X509EncodedKeySpec.class);
-
-        String cert = Base64.getEncoder().encodeToString(ks.getCertificate("issued-cert").getEncoded());
-
         Certificate[] certificateChain = privateKeyEntry.getCertificateChain();
-        ///////////////////////////////////////////////////
 
-        Path finalDestPath =
-                Paths.get(BASE_DEST + signingSession.getId() + "_" + fileToBeSignedPath.getFileName().toString());
+        Path signedDocumentPath = Paths.get(
+                BASE_DEST + signingSession.getId() + "_" + documentToBeSignedPath.getFileName().toString());
 
-//        TODO pokusaj da se izmeni dokument(integritet) bruno strana 49
-//        TODO probaj da istekne sertifikat 60 min pa da onda potpise sta se desi
-//        TODO probaj da ipak das da se potpise potpisani ali moras promeniti sig field name 52 str
-        PdfReader pdfReader = new PdfReader(fileToBeSignedPath.toString());
-        OutputStream result = new FileOutputStream(finalDestPath.toString());
-        PdfSigner pdfSigner =
-                new PdfSigner(pdfReader, result, new StampingProperties().preserveEncryption().useAppendMode());
-        pdfSigner.setFieldName("Advanced Electronic Signature");
-//        pdfSigner.setCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
+        try (PdfReader pdfReader = new PdfReader(documentToBeSignedPath.toString());
+             OutputStream outputStream = new FileOutputStream(signedDocumentPath.toString());
+             PdfDocument pdfDocument = new PdfDocument(pdfReader)) {
 
-        PdfDocument pdfDocument = new PdfDocument(new PdfReader(fileToBeSignedPath.toString()));
+            PdfSigner pdfSigner = new PdfSigner(new PdfReader(documentToBeSignedPath.toString()), outputStream,
+                    new StampingProperties().preserveEncryption().useAppendMode());
+            pdfSigner.setFieldName("Advanced Electronic Signature");
 
+            addSignatureAppearance(pdfSigner, pdfDocument, reason, location, contact, provider);
+
+            IExternalDigest externalDigest = new BouncyCastleDigest();
+            IExternalSignature signature = new PrivateKeySignature(privateKey, "SHA256",
+                    provider.getName());
+            ICrlClient crlClient = getCrlClient();
+            List<ICrlClient> crlList = getCrlList(crlClient);
+            ITSAClient tsaClient = new TSAClientBouncyCastle("https://freetsa.org/tsr", "", "", 8192,
+                    DIGEST_ALGORITHM);
+
+            pdfSigner.signDetached(externalDigest, signature, certificateChain, crlList, null, tsaClient,
+                    0,
+                    PdfSigner.CryptoStandard.CADES);
+
+            signingSession.getDocument().setSignedAt(pdfSigner.getSignDate().getTimeInMillis());
+            signingSession.getCertificate().setCertificate(Base64.getEncoder()
+                    .encodeToString(keyStore.getCertificate(ISSUED_CERT_ALIAS).getEncoded()));
+
+            // dispose certificate
+            storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
+
+            addLTA(signedDocumentPath, crlClient, signingSession, documentToBeSignedPath);
+
+            return signedDocumentPath;
+        }
+    }
+
+    private List<ICrlClient> getCrlList(ICrlClient crlClient)
+            throws IOException, GeneralSecurityException {
+        try (FileInputStream inputStream = new FileInputStream(
+                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl")) {
+            List<ICrlClient> crlList = new ArrayList<>();
+            crlList.add(crlClient);
+            CertificateFactory cf = CertificateFactory.getInstance("X.509");
+            X509CRL crl = (X509CRL) cf.generateCRL(inputStream);
+            log.info("CRL valid until: " + crl.getNextUpdate());
+            // log.info("Certificate revoked: " + crl.isRevoked(certificateChain[0]));
+            return crlList;
+        }
+    }
+
+    private ICrlClient getCrlClient() throws IOException {
+        try (FileInputStream inputStream = new FileInputStream(
+                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl");
+             ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+            byte[] buf = new byte[1024];
+            while (inputStream.read(buf) != -1) {
+                outputStream.write(buf);
+            }
+            return new CrlClientOffline(outputStream.toByteArray());
+        }
+    }
+
+    private void addSignatureAppearance(PdfSigner pdfSigner, PdfDocument pdfDocument, String reason,
+                                        String location, String contact, BouncyCastleProvider provider) {
         PdfSignatureAppearance appearance = pdfSigner.getSignatureAppearance();
         Rectangle pageSize = pdfSigner.getDocument().getDefaultPageSize();
-        appearance.setPageRect(new Rectangle(pageSize.getLeft() + 36, pageSize.getBottom() + 36, 200, 100));
+        appearance.setPageRect(new Rectangle(pageSize.getLeft() + 36, pageSize.getBottom() + 36,
+                200, 100));
         appearance.setPageNumber(pdfDocument.getNumberOfPages());
         appearance.setRenderingMode(PdfSignatureAppearance.RenderingMode.DESCRIPTION);
         appearance.setReasonCaption("");
@@ -145,121 +143,115 @@ public class SigningService {
         appearance.setLocation(location);
         appearance.setContact(contact); // ???
         appearance.setSignatureCreator(provider.getName());
+    }
 
-        ITSAClient tsaClient = new TSAClientBouncyCastle("https://freetsa.org/tsr", "", "", 8192, "SHA-256");
+    private KeyStore.PrivateKeyEntry getPrivateKeyEntry(KeyStore keyStore, String keystorePassword)
+            throws GeneralSecurityException {
+        return (KeyStore.PrivateKeyEntry) keyStore.getEntry(ISSUED_CERT_ALIAS,
+                new KeyStore.PasswordProtection(keystorePassword.toCharArray()));
+    }
 
-        FileInputStream is = new FileInputStream(
-                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl");
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        byte[] buf = new byte[1024];
-        while (is.read(buf) != -1) {
-            baos.write(buf);
-        }
-        ICrlClient crlClient = new CrlClientOffline(baos.toByteArray());
-        List<ICrlClient> crlList = new ArrayList<ICrlClient>();
-        crlList.add(crlClient);
-        CertificateFactory cf = CertificateFactory.getInstance("X.509");
-        X509CRL crl = (X509CRL) cf.generateCRL(new FileInputStream(
-                "C:/Users/ACER/Desktop/AdvancedElectronicSignature/aes/src/main/resources/encryption/file.crl"));
-        System.out.println("CRL valid until: " + crl.getNextUpdate());
-        System.out.println("Certificate revoked: " + crl.isRevoked(certificateChain[0]));
-        is.close();
+    private void createDirectoryForSignedDocuments() {
+        File file = new File(BASE_DEST);
+        file.mkdir();
+    }
 
-        IExternalSignature signature = new PrivateKeySignature(privateKey, "SHA256", provider.getName());
-        IExternalDigest externalDigest = new BouncyCastleDigest();
-        pdfSigner.signDetached(externalDigest, signature, certificateChain, crlList, null, tsaClient, 0,
-                PdfSigner.CryptoStandard.CADES);
-
-
-        pdfDocument.close();
-
-
-        Calendar signDate = pdfSigner.getSignDate();
-        signingSession.getDocument().setSignedAt(signDate.getTimeInMillis());
-        signingSession.getCertificate().setCertificate(cert);
-
-        // dispose certificate
-        storageService.deleteKeystore(signingSession.getCertificate().getSerialNumber() + ".pfx");
-
-        addLTA(finalDestPath, crlClient, signingSession, fileToBeSignedPath);
-
-        return finalDestPath;
+    private BouncyCastleProvider initializeSecurityProvider() {
+        BouncyCastleProvider provider = new BouncyCastleProvider();
+        Security.removeProvider(provider.getName());
+        Security.addProvider(provider);
+        return provider;
     }
 
     private void addLTA(Path finalDestPath, ICrlClient crlClient, SigningSession signingSession,
                         Path fileToBeSignedPath) throws IOException, GeneralSecurityException {
-        // Extend from B-T to B-LT
-        PdfReader pdfReader = new PdfReader(finalDestPath.toString());
-        Path ltPath =
-                Paths.get(BASE_DEST + signingSession.getId() + "_lt_" + fileToBeSignedPath.getFileName().toString());
-        PdfWriter pdfWriter = new PdfWriter(ltPath.toString());
-        PdfDocument pdfDoc = new PdfDocument(pdfReader, pdfWriter, new StampingProperties().useAppendMode());
-        LtvVerification v = new LtvVerification(pdfDoc);
 
-        v.addVerification("Advanced Electronic Signature", null, crlClient,
-                LtvVerification.CertificateOption.WHOLE_CHAIN,
-                LtvVerification.Level.CRL, LtvVerification.CertificateInclusion.YES);
-        v.merge();
-        pdfDoc.close();
+        Path ltPath = Paths.get(
+                BASE_DEST + signingSession.getId() + "_lt_" + fileToBeSignedPath.getFileName().toString());
+        Path ltaPath = Paths.get(
+                BASE_DEST + signingSession.getId() + "_lta_" + fileToBeSignedPath.getFileName().toString());
 
-        // Extend from B-LT to B-LTA
-        PdfReader ltaReader = new PdfReader(
-                ltPath.toString());
-        Path ltaPath =
-                Paths.get(BASE_DEST + signingSession.getId() + "_lta_" + fileToBeSignedPath.getFileName().toString());
-        OutputStream os = new FileOutputStream(ltaPath.toString());
-        PdfSigner ps = new PdfSigner(ltaReader, os, new StampingProperties().useAppendMode());
-        ITSAClient tsaClient = new TSAClientBouncyCastle("https://freetsa.org/tsr", "", "", 8192, "SHA-256");
-        ps.timestamp(tsaClient, "Signature Validation Data Timestamp");
-
-        // Enable LTV for timestamp signature
-        PdfReader r = new PdfReader(ltaPath.toString());
-        PdfWriter w = new PdfWriter(finalDestPath.toString());
-        PdfDocument d = new PdfDocument(r, w, new StampingProperties().useAppendMode());
-
-        ICrlClient ltaCrlClient = new CrlClientOnline();
-        LtvVerification ltaV = new LtvVerification(d);
-        ltaV.addVerification("Signature Validation Data Timestamp", null, ltaCrlClient,
-                LtvVerification.CertificateOption.WHOLE_CHAIN,
-                LtvVerification.Level.CRL, LtvVerification.CertificateInclusion.YES);
-        ltaV.merge();
-        d.close();
+        extendFromBTToBLT(ltPath, finalDestPath, crlClient);
+        extendFromBLTToBLTA(ltPath, ltaPath);
+        enableLTVForTimestampSignature(ltaPath, finalDestPath);
 
         storageService.deleteFile(ltPath);
         storageService.deleteFile(ltaPath);
     }
 
+    private void enableLTVForTimestampSignature(Path ltaPath, Path finalDestPath)
+            throws IOException, GeneralSecurityException {
+        // Enable LTV for timestamp signature
+        try (PdfReader pdfReader = new PdfReader(ltaPath.toString());
+             PdfWriter pdfWriter = new PdfWriter(finalDestPath.toString());
+             PdfDocument pdfDocument = new PdfDocument(pdfReader, pdfWriter,
+                     new StampingProperties().useAppendMode())) {
+            ICrlClient ltaCrlClient = new CrlClientOnline();
+            LtvVerification ltaV = new LtvVerification(pdfDocument);
+            ltaV.addVerification("Signature Validation Data Timestamp", null, ltaCrlClient,
+                    LtvVerification.CertificateOption.WHOLE_CHAIN, LtvVerification.Level.CRL,
+                    LtvVerification.CertificateInclusion.YES);
+            ltaV.merge();
+        }
+    }
+
+    private void extendFromBLTToBLTA(Path ltPath, Path ltaPath)
+            throws IOException, GeneralSecurityException {
+        // Extend from B-LT to B-LTA
+        try (PdfReader pdfReader = new PdfReader(ltPath.toString());
+             OutputStream outputStream = new FileOutputStream(ltaPath.toString())) {
+            PdfSigner pdfSigner = new PdfSigner(pdfReader, outputStream,
+                    new StampingProperties().useAppendMode());
+            ITSAClient tsaClient = new TSAClientBouncyCastle("https://freetsa.org/tsr", "", "", 8192,
+                    DIGEST_ALGORITHM);
+            pdfSigner.timestamp(tsaClient, "Signature Validation Data Timestamp");
+        }
+    }
+
+    private void extendFromBTToBLT(Path ltPath, Path finalDestPath, ICrlClient crlClient)
+            throws IOException, GeneralSecurityException {
+        // Extend from B-T to B-LT
+        try (PdfReader pdfReader = new PdfReader(finalDestPath.toString());
+             PdfWriter pdfWriter = new PdfWriter(ltPath.toString());
+             PdfDocument pdfDocument = new PdfDocument(pdfReader, pdfWriter,
+                     new StampingProperties().useAppendMode())) {
+            LtvVerification ltvVerification = new LtvVerification(pdfDocument);
+            ltvVerification.addVerification("Advanced Electronic Signature", null, crlClient,
+                    LtvVerification.CertificateOption.WHOLE_CHAIN, LtvVerification.Level.CRL,
+                    LtvVerification.CertificateInclusion.YES);
+            ltvVerification.merge();
+        }
+    }
+
     private String prepareLocation(String clientIp) throws IOException, GeoIp2Exception {
-        GeoIP geoIP;
-        if (clientIp.equals("0:0:0:0:0:0:0:1") || clientIp.equals("127.0.0.1")) {
-            geoIP = locationService.getLocation("87.116.160.153");
-        }
-        else {
-            geoIP = locationService.getLocation(clientIp);
-        }
+        GeoIP geoIP = locationService.getLocation(
+                clientIp.equals("0:0:0:0:0:0:0:1") || clientIp.equals("127.0.0.1") ? "87.116.160.153"
+                        : clientIp);
         return geoIP.getCity() + ", " + geoIP.getCountry();
     }
 
-    private String prepareReason(SigningSession signingSession, Map<String, Object> principalClaims)
-            throws IOException, NoSuchAlgorithmException {
-        File fileToBeSigned = new File(signingSession.getDocument().getFilePath());
-//        HashCode hash = Files.hash(fileToBeSigned, Hashing.md5());
-        MessageDigest shaDigest = MessageDigest.getInstance("SHA-256");
-        String shaChecksum = getFileChecksum(shaDigest, fileToBeSigned);
-
+    private String prepareReason(SigningSession signingSession, Map<String, Object> principalClaims) {
         SimpleDateFormat sdf = new SimpleDateFormat("dd.MM.yyyy. HH:mm");
-
-        String reason = "Email address: " + principalClaims.get("email") + "\n"
-                + "Phone number: " + principalClaims.get("mobile") + "\n"
-                + "Based on the signing session with ID:" + "\n"
-                + signingSession.getId() + "\n"
-                + "for which the user was issued a certificate with serial number: " + "\n"
-                + signingSession.getCertificate().getSerialNumber() + "\n"
-                + "Recorded activities:" + "\n"
-                + sdf.format(new Date(signingSession.getCertificate().getRequestedAt() * 1000)) +
-                " - signature requested" + "\n"
-                + sdf.format(new Date(signingSession.getCertificate().getIssuedAt() * 1000)) + " - certificate issued";
-
-        return reason;
+        return "Email address: "
+                + principalClaims.get("email")
+                + "\n"
+                + "Phone number: "
+                + principalClaims.get("mobile")
+                + "\n"
+                + "Based on the signing session with ID:"
+                + "\n"
+                + signingSession.getId()
+                + "\n"
+                + "for which the user was issued a certificate with serial number: "
+                + "\n"
+                + signingSession.getCertificate().getSerialNumber()
+                + "\n"
+                + "Recorded activities:"
+                + "\n"
+                + sdf.format(new Date(signingSession.getCertificate().getRequestedAt() * 1000))
+                + " - signature requested"
+                + "\n"
+                + sdf.format(new Date(signingSession.getCertificate().getIssuedAt() * 1000))
+                + " - certificate issued";
     }
 }

@@ -2,12 +2,11 @@ package com.zrs.aes.response;
 
 
 import com.zrs.aes.persistence.model.Status;
+import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.util.UUID;
 
 @Data
 @AllArgsConstructor
@@ -15,19 +14,19 @@ import java.util.UUID;
 @Builder
 public class SigningSessionResponse {
 
-    private UUID id;
+  private UUID id;
 
-    private UUID userId;
+  private UUID userId;
 
-    private DocumentResponse document;
+  private DocumentResponse document;
 
-    private int resendAttempts;
+  private int resendAttempts;
 
-    private int signAttempts;
+  private int signAttempts;
 
-    private Long suspendedUntil;
+  private Long suspendedUntil;
 
-    private Boolean consent;
+  private Boolean consent;
 
-    private Status status;
+  private Status status;
 }

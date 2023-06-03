@@ -9,10 +9,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "file")
 public class StorageProperties {
 
-    private String uploadDir;
-    private String downloadDir;
+  private String uploadDir;
+  private String downloadDir;
 
-    private String uploadCertDir;
-    private String rootCertPath;
+  private String uploadCertDir;
+  private String rootCertPath;
 
 }

@@ -9,6 +9,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "sms")
 public class SmsProperties {
 
-    private String TWILIO_ACCOUNT_SID;
-    private String TWILIO_AUTH_TOKEN;
+  private String twilioAccountSid;
+  private String twilioAuthToken;
 }

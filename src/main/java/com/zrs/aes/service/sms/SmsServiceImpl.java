@@ -8,14 +8,14 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 
 @Service
-public class SmsServiceImpl implements ISmsService {
+public class SmsServiceImpl implements SmsService {
 
     String sid;
     String token;
 
     public SmsServiceImpl(SmsProperties smsProperties) {
-        this.sid = smsProperties.getTWILIO_ACCOUNT_SID();
-        this.token = smsProperties.getTWILIO_AUTH_TOKEN();
+        this.sid = smsProperties.getTwilioAccountSid();
+        this.token = smsProperties.getTwilioAuthToken();
     }
 
     @Override
@@ -29,7 +29,7 @@ public class SmsServiceImpl implements ISmsService {
                 firstName + ", your code for document signing is " + code;
 
         Message.creator(new PhoneNumber(phoneNumber),
-                new PhoneNumber("+16294682658"), message).create();
+                new PhoneNumber("+12544428507"), message).create();
 
     }
 }
