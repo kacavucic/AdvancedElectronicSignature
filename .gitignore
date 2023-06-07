@@ -36,4 +36,6 @@ build/
 **/src/main/resources/static/*
 **/src/main/resources/application-local.yml
 
+**/src/test/resources/encryption/*
+**/src/test/resources/static/*
 **/src/test/resources/application-local.yml

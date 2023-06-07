@@ -81,10 +81,11 @@ public class SigningSessionServiceImpl implements SigningSessionService {
 
   @Override
   public SigningSession findById(UUID signingSessionId) {
+
     return signingSessionRepository
         .findById(signingSessionId)
         .orElseThrow(() -> new EntityNotFoundException(SigningSession.class,
-            "signingSessionId", signingSessionId.toString()));
+                "signingSessionId", signingSessionId.toString()));
   }
 
   @Override
@@ -130,6 +131,7 @@ public class SigningSessionServiceImpl implements SigningSessionService {
 
     signingSession.setDocument(document);
     SigningSession initiatedSigningSession = save(signingSession);
+    pdfDocument.close();
     return signingSessionMapper.toSigningSessionResponse(initiatedSigningSession);
   }
 
@@ -147,8 +149,7 @@ public class SigningSessionServiceImpl implements SigningSessionService {
   }
 
   @Override
-  public SigningSessionResponse approveSigningSession(UUID signingSessionId, Boolean consent,
-      Long certRequestedAt)
+  public SigningSessionResponse approveSigningSession(UUID signingSessionId, Boolean consent, Long certRequestedAt)
       throws GeneralSecurityException, IOException, OperatorCreationException, PKCSException, MessagingException {
     SigningSession signingSession = findById(signingSessionId);
     Map<String, Object> principalClaims = AuthUtil.getPrincipalClaims();
@@ -163,6 +164,9 @@ public class SigningSessionServiceImpl implements SigningSessionService {
     signingSession.setStatus(Status.IN_PROGRESS);
 
     // TODO crl istice nakon 7 dana, moras pred odbranu novi da generises
+
+    // TODO nema public key u bazi nakon potpisivanja WTFFFFFFFFFFF
+
 
     // smsService.sendSigningSms(principalClaims, keystorePassword);
     emailService.sendSigningEmail(principalClaims, keystorePassword);

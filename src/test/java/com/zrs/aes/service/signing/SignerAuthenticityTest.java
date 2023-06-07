@@ -1,202 +1,199 @@
 package com.zrs.aes.service.signing;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyString;
-import static org.mockito.Mockito.when;
-
-import com.maxmind.geoip2.exception.GeoIp2Exception;
-import com.zrs.aes.exception.customexceptions.InvalidStatusException;
+import com.zrs.aes.exception.customexceptions.InvalidUserException;
 import com.zrs.aes.mapper.SigningSessionMapper;
+import com.zrs.aes.persistence.model.Certificate;
 import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.persistence.repository.SigningSessionRepository;
-import com.zrs.aes.request.ApproveSigningSessionRequest;
-import com.zrs.aes.response.SigningSessionResponse;
 import com.zrs.aes.service.certificate.CertificateGenerationService;
-import com.zrs.aes.service.certificate.KeyStorePasswordGenerator;
 import com.zrs.aes.service.certificate.KeystoreLoader;
 import com.zrs.aes.service.email.EmailService;
 import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
+import com.zrs.aes.service.location.HttpUtils;
 import com.zrs.aes.service.signingsession.SigningSessionServiceImpl;
 import com.zrs.aes.service.sms.SmsService;
 import com.zrs.aes.service.storage.StorageProperties;
 import com.zrs.aes.service.storage.StorageService;
 import com.zrs.aes.service.storage.StorageServiceImpl;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.security.GeneralSecurityException;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
-import javax.mail.MessagingException;
+import com.zrs.aes.util.AuthUtil;
+import com.zrs.aes.util.GenericMessage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
-import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import javax.servlet.http.HttpServletRequest;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.security.KeyStore;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@SpringBootTest
+@TestPropertySource(locations = "classpath:application.yml")
 @ExtendWith(SpringExtension.class)
 @ContextConfiguration(initializers = ConfigDataApplicationContextInitializer.class)
-@EnableConfigurationProperties(value = SigningProperties.class)
 @ActiveProfiles("local")
 class SignerAuthenticityTest {
 
-  private final String givenName = "Katarina";
-  private final String familyName = "Vucic";
-  private final String contact = "kattylicious98@gmail.com";
-  private final String clientIp = "192.168.0.55";
+    private final String fileToBeSignedName = "a.pdf";
+    private final String certificateSerialNumber = "-1898837518887619158";
+    private final String keystorePassword = "ATYTXWY";
 
-  SigningProperties signingProperties;
-  StorageProperties storageProperties;
-  StorageService storageService;
-  @Mock
-  GeoIPLocationService locationService;
-  @Mock
-  KeystoreLoader keystoreLoader;
-  @Mock
-  SigningSessionRepository signingSessionRepository;
+    @Autowired
+    StorageProperties storageProperties;
+    StorageService storageService;
+    MockedStatic<AuthUtil> authUtil;
+    MockedStatic<HttpUtils> httpUtils;
+    SigningService signingService;
+    SigningSession signingSession;
+    Map<String, Object> principalClaims;
+    SigningSessionServiceImpl signingSessionService;
+    @Mock
+    GeoIPLocationService locationService;
+    @Mock
+    SigningSessionRepository signingSessionRepository;
+    @Mock
+    EmailService emailService;
+    @Mock
+    SmsService smsService;
+    @Mock
+    KeystoreLoader keystoreLoader;
+    @Mock
+    HttpServletRequest httpServletRequest;
+    @Mock
+    CertificateGenerationService certificateGenerationService;
+    @Mock
+    SigningSessionMapper signingSessionMapper;
 
-  @Mock
-  EmailService emailService;
-  @Mock
-  SmsService smsService;
-  SigningService signingService;
-  SigningSession signingSession;
-  SigningSessionResponse signingSessionResponse;
-  SigningSessionMapper signingSessionMapper;
-  SigningSessionServiceImpl signingSessionService;
-  Map<String, Object> principalClaims;
-  CertificateGenerationService certGenerationService;
-  @Mock
-  KeyStorePasswordGenerator keyPassGen;
 
-  @BeforeEach
-  void setUp()
-      throws GeneralSecurityException, IOException, GeoIp2Exception, MessagingException, Exception {
-    MockitoAnnotations.openMocks(this);
+    @BeforeEach
+    void setUp() throws Exception {
+        MockitoAnnotations.openMocks(this);
 
-    when(keyPassGen.generate())
-        .thenReturn("RANDOMPASSWORD");
-    // ARRANGE
+        Path fileToBeSignedPath = Paths.get(storageProperties.getUploadDir() + "/" + fileToBeSignedName);
+        String keystorePath = storageProperties.getUploadCertDir() + "/" + certificateSerialNumber + ".pfx";
 
-    // Arrange globals
-    storageProperties = new StorageProperties();
-    storageProperties.setUploadDir("src/main/resources/static/uploadedDocuments");
-    storageProperties.setDownloadDir("src/main/resources/static/signedDocuments");
-    storageProperties.setUploadCertDir("src/main/resources/static/uploadedCerts");
-    storageProperties.setRootCertPath("src/main/resources/encryption");
-    storageService = new StorageServiceImpl(storageProperties);
-    signingProperties = new SigningProperties();
-    signingProperties.setKeyPass("katarina");
-    signingProperties.setStorePass("katarina");
-    signingService = new SigningService(storageService, locationService, keystoreLoader);
-    principalClaims = new HashMap();
-    principalClaims.put("email", contact);
-    principalClaims.put("given_name", givenName);
-    principalClaims.put("family_name", familyName);
-    principalClaims.put("mobile", "123456789");
-    principalClaims.put("name", givenName + " " + familyName);
-    principalClaims.put("sub", "d59d13ba-da98-47a5-b245-cd82698adfdd");
+        principalClaims = new HashMap<>();
+        principalClaims.put("email", "vucic.kat@gmail.com");
+        principalClaims.put("given_name", "Katarina");
+        principalClaims.put("family_name", "Vucic");
+        principalClaims.put("mobile", "+381693724133");
+        principalClaims.put("sub", "d59d13ba-da98-47a5-b245-cd82698adfdd");
 
-    // Arrange Initiate session deps
-    File initialFile = new File("src/main/resources/static/uploadedDocuments/a.pdf");
-    InputStream targetStream = new FileInputStream(initialFile);
-    MockMultipartFile file = new MockMultipartFile("a.pdf", getRandomString() + ".pdf",
-        "application/pdf", targetStream);
+        authUtil = Mockito.mockStatic(AuthUtil.class);
+        authUtil.when(AuthUtil::getPrincipalClaims).thenReturn(principalClaims);
 
-    // Arrange Approve signing deps
-    certGenerationService = new CertificateGenerationService(signingProperties, storageService,
-        keyPassGen);
-    signingSessionService = new SigningSessionServiceImpl(signingSessionRepository,
-        storageService, emailService, smsService, locationService, signingService,
-        certGenerationService, signingSessionMapper);
+        // Arrange Initiate session deps
+        storageService = Mockito.spy(new StorageServiceImpl(storageProperties));
+        signingService = Mockito.spy(new SigningService(storageService, storageProperties, locationService,
+                keystoreLoader));
+        signingSessionService = Mockito.spy(new SigningSessionServiceImpl(signingSessionRepository, storageService,
+                emailService, smsService, locationService, signingService, certificateGenerationService,
+                signingSessionMapper));
 
-    when(signingSessionService.save(any(SigningSession.class))).thenAnswer(
-        i -> i.getArguments()[0]);
+        File initialFile = new File(fileToBeSignedPath.toString());
+        InputStream targetStream = new FileInputStream(initialFile);
+        MockMultipartFile file = new MockMultipartFile(fileToBeSignedName, fileToBeSignedName,
+                "application/pdf", targetStream);
+        doAnswer(i -> {
+            UUID signingSessionId = UUID.randomUUID();
+            signingSession = (SigningSession) i.getArguments()[0];
+            signingSession.setId(signingSessionId);
+            return signingSession;
+        }).when(signingSessionService).save(any(SigningSession.class));
 
-    // Arrange Signing deps
-    when(locationService.getLocation(anyString()))
-        .thenReturn(new GeoIP(clientIp, "Belgrade", "Serbia", "44", "22"));
+        // Initiate session
+        signingSessionService.initiateSigningSession(file);
 
-    ApproveSigningSessionRequest approveSigningSessionRequest = new ApproveSigningSessionRequest();
-    approveSigningSessionRequest.setConsent(true);
-    approveSigningSessionRequest.setCertRequestedAt(Instant.now().getEpochSecond());
-    // ACT
+        // Arrange Approve signing deps
+        doReturn(signingSession).when(signingSessionService).findById(any(UUID.class));
+        Long certRequestedAt = Instant.now().getEpochSecond();
+        when(certificateGenerationService.generateUserCertificate(any(), any(), any())).thenAnswer(i -> {
+            Certificate certificate = Certificate.builder()
+                    .signingSession(signingSession)
+                    .serialNumber(new BigInteger(certificateSerialNumber))
+                    .requestedAt(certRequestedAt)
+                    .issuedAt(Instant.now().getEpochSecond())
+                    .build();
+            signingSession.setCertificate(certificate);
+            return keystorePassword;
+        });
 
-    // Initiate session
-    signingSessionResponse = signingSessionService.initiateSigningSession(file);
-    signingSession.setId(UUID.randomUUID());
+        // Approve signing
+        signingSessionService.approveSigningSession(signingSession.getId(), true, Instant.now().getEpochSecond());
 
-    // Approve signing
-    signingSessionResponse = signingSessionService.approveSigningSession(signingSession.getId(),
-        approveSigningSessionRequest.getConsent(),
-        approveSigningSessionRequest.getCertRequestedAt());
-  }
+        // Arrange Signing deps
+        httpUtils = Mockito.mockStatic(HttpUtils.class);
+        httpUtils.when(() -> HttpUtils.getRequestIPAddress(httpServletRequest)).thenReturn("109.245.194.170");
 
-  @AfterEach
-  void tearDown() throws IOException {
-    // TODO Check this
-    signingService = null;
-    signingSessionService = null;
-    signingSession = null;
-  }
+        when(locationService.getLocation(anyString())).thenReturn(
+                new GeoIP("109.245.194.170", "Belgrade", "Serbia", "44", "22"));
+        when(certificateGenerationService.verifyKeystorePassword(signingSession, keystorePassword)).thenReturn(true);
+        KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        keyStore.load(new FileInputStream(keystorePath), keystorePassword.toCharArray());
+        doReturn(Paths.get(keystorePath)).when(storageService).loadCert(certificateSerialNumber + ".pfx");
+        doNothing().when(storageService).deleteKeystore(certificateSerialNumber + ".pfx");
+        doReturn(keyStore).when(keystoreLoader).loadKeystore(signingSession, keystorePassword);
+        doReturn(fileToBeSignedPath).when(storageService).load(signingSession.getDocument().getFileName());
+    }
 
-  @Test
-  @DisplayName("Reject different principal than one initiated the session")
-  void rejectDifferentPrincipal() throws IOException, GeneralSecurityException, GeoIp2Exception {
-    Map<String, Object> principalClaimsForged = new HashMap();
-    principalClaims.put("email", "something@el.se");
-    principalClaims.put("given_name", "John");
-    principalClaims.put("family_name", "Doe");
-    principalClaims.put("sub", "a59d13ba-da98-47a5-b245-cd82698adfda");
-    MockHttpServletRequest mockHttpServletRequest = new MockHttpServletRequest();
-    // Sign document
-    Exception exception = assertThrows(InvalidStatusException.class, () -> {
-      signingSessionService.sign(signingSession.getId(), "RANDOMPASSWORD", mockHttpServletRequest);
-    });
-    String expectedMessage = "Provided session does not belong to current user (caller)";
-    String actualMessage = exception.getMessage();
+    @AfterEach
+    void tearDown() {
+        signingSession = null;
+        storageService = null;
+        signingService = null;
+        authUtil.close();
+        httpUtils.close();
+    }
 
-    assertEquals(actualMessage, expectedMessage, expectedMessage);
-  }
+    @Test
+    @DisplayName("Reject different principal than one initiated the session")
+    void rejectDifferentPrincipal() {
+        Map<String, Object> principalClaimsForged = new HashMap<>();
+        principalClaimsForged.put("email", "something@el.se");
+        principalClaimsForged.put("given_name", "John");
+        principalClaimsForged.put("family_name", "Doe");
+        principalClaimsForged.put("sub", "a59d13ba-da98-47a5-b245-cd82698adfda");
+        authUtil.when(AuthUtil::getPrincipalClaims).thenReturn(principalClaimsForged);
 
-  @Test
-  @DisplayName("Accept only the same principal as one initiated the session")
-  void acceptValidPrincipal() throws IOException, GeneralSecurityException, GeoIp2Exception {
-    MockHttpServletRequest mockHttpServletRequest = new MockHttpServletRequest();
-    // Sign document
-    assertDoesNotThrow(() ->
-            signingSessionService.sign(signingSession.getId(), "RANDOMPASSWORD",
-                mockHttpServletRequest),
-        "Same principal as one initiated the session is accepted");
-  }
+        // Sign document
+        UUID signingSessionId = signingSession.getId();
+        Exception exception = assertThrows(InvalidUserException.class, () -> signingSessionService
+                .sign(signingSessionId, keystorePassword, httpServletRequest));
+        String expectedMessage = GenericMessage.ERROR_MESSAGE_INVALID_USER;
+        String actualMessage = exception.getMessage();
+        assertEquals(actualMessage, expectedMessage, expectedMessage);
+    }
 
-  private String getRandomString() {
-    int leftLimit = 97; // letter 'a'
-    int rightLimit = 122; // letter 'z'
-    int targetStringLength = 10;
-    Random random = new Random();
-
-    String generatedString = random.ints(leftLimit, rightLimit + 1)
-        .limit(targetStringLength)
-        .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
-        .toString();
-    return generatedString;
-  }
+    @Test
+    @DisplayName("Accept only the same principal as one initiated the session")
+    void acceptValidPrincipal() {
+        // Sign document
+        assertDoesNotThrow(() -> signingSessionService.sign(signingSession.getId(), keystorePassword, httpServletRequest),
+                "Same principal as one initiated the session is accepted");
+    }
 }

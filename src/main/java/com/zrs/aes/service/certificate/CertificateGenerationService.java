@@ -285,8 +285,10 @@ public class CertificateGenerationService {
     Calendar calendar = Calendar.getInstance();
     Date startDate = new Date(); // current time
     calendar.setTime(startDate);
-    calendar.add(Calendar.MINUTE, 60);
+    calendar.add(Calendar.YEAR, 1);
     Date endDate = calendar.getTime();
+
+    // TODO vrati na staro
 
     // Create user certificate builder
     X509v3CertificateBuilder userCertBuilder =

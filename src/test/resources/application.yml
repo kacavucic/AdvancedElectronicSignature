@@ -6,10 +6,13 @@ server:
   tomcat:
     max-swallow-size: -1
 file:
-  upload-dir: src/main/resources/static/uploadedDocuments
-  download-dir: src/main/resources/static/signedDocuments
-  upload-cert-dir: src/main/resources/static/uploadedCerts
-  root-cert-path: src/main/resources/encryption
+  upload-dir: src/test/resources/static/uploadedDocuments
+  download-dir: src/test/resources/static/signedDocuments
+  upload-cert-dir: src/test/resources/static/uploadedCerts
+  root-cert-path: src/test/resources/encryption
+sms:
+  TWILIO_ACCOUNT_SID: tbd
+  TWILIO_AUTH_TOKEN: tbd
 
 ####### resource server configuration properties
 spring:
@@ -17,6 +20,12 @@ spring:
     active: local
   jpa:
     generate-ddl: true
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        format_sql: true
+    show-sql: true
   datasource:
     username: tbd
     password: tbd
@@ -26,8 +35,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://localhost:8083/auth/realms/aes
-          jwk-set-uri: http://localhost:8083/auth/realms/aes/protocol/openid-connect/certs
+          issuer-uri: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes
+          jwk-set-uri: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/certs
   mail:
     host: smtp.gmail.com
     username: tbd
@@ -47,7 +56,16 @@ spring:
 keystore:
   store-pass: tbd
   key-pass: tbd
+
 springdoc:
-  api-docs:
-    path: /api
+  version: '@springdoc.version@'
+  swagger-ui:
+    oauth:
+      clientId: aes-app
+      clientSecret: fz4s7y2TY4dMgotxUDZdYqXpzyCpWOub
+    try-it-out-enabled: false
+    oauth2-redirect-url: /swagger-ui/oauth2-redirect.html
+  oAuthFlow:
+    authorizationUrl: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/auth
+    tokenUrl: ${OAUTH2_SERVER:http://localhost:8083}/auth/realms/aes/protocol/openid-connect/token
   default-produces-media-type: application/json

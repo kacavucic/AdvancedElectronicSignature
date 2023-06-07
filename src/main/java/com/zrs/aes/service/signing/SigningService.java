@@ -11,6 +11,7 @@ import com.zrs.aes.persistence.model.SigningSession;
 import com.zrs.aes.service.certificate.KeystoreLoader;
 import com.zrs.aes.service.location.GeoIP;
 import com.zrs.aes.service.location.GeoIPLocationService;
+import com.zrs.aes.service.storage.StorageProperties;
 import com.zrs.aes.service.storage.StorageService;
 import lombok.extern.slf4j.Slf4j;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -34,16 +35,17 @@ import java.util.*;
 public class SigningService {
 
     // TODO generate application-local.yml.aes again
-    private static final String BASE_DEST = "src/main/resources/static/signedDocuments/";
+    private final String baseDest;
     private static final String ISSUED_CERT_ALIAS = "issued-cert";
     private static final String DIGEST_ALGORITHM = "SHA-256";
     private final StorageService storageService;
     private final GeoIPLocationService locationService;
     private final KeystoreLoader keystoreLoader;
 
-    public SigningService(StorageService storageService, GeoIPLocationService locationService,
+    public SigningService(StorageService storageService, StorageProperties storageProperties, GeoIPLocationService locationService,
                           KeystoreLoader keystoreLoader) {
         this.storageService = storageService;
+        this.baseDest = storageProperties.getDownloadDir() + "/";
         this.locationService = locationService;
         this.keystoreLoader = keystoreLoader;
     }
@@ -67,7 +69,7 @@ public class SigningService {
         Certificate[] certificateChain = privateKeyEntry.getCertificateChain();
 
         Path signedDocumentPath = Paths.get(
-                BASE_DEST + signingSession.getId() + "_" + documentToBeSignedPath.getFileName().toString());
+                baseDest + signingSession.getId() + "_" + documentToBeSignedPath.getFileName().toString());
 
         try (PdfReader pdfReader = new PdfReader(documentToBeSignedPath.toString());
              OutputStream outputStream = new FileOutputStream(signedDocumentPath.toString());
@@ -152,7 +154,7 @@ public class SigningService {
     }
 
     private void createDirectoryForSignedDocuments() {
-        File file = new File(BASE_DEST);
+        File file = new File(baseDest);
         file.mkdir();
     }
 
@@ -167,9 +169,9 @@ public class SigningService {
                         Path fileToBeSignedPath) throws IOException, GeneralSecurityException {
 
         Path ltPath = Paths.get(
-                BASE_DEST + signingSession.getId() + "_lt_" + fileToBeSignedPath.getFileName().toString());
+                baseDest + signingSession.getId() + "_lt_" + fileToBeSignedPath.getFileName().toString());
         Path ltaPath = Paths.get(
-                BASE_DEST + signingSession.getId() + "_lta_" + fileToBeSignedPath.getFileName().toString());
+                baseDest + signingSession.getId() + "_lta_" + fileToBeSignedPath.getFileName().toString());
 
         extendFromBTToBLT(ltPath, finalDestPath, crlClient);
         extendFromBLTToBLTA(ltPath, ltaPath);
